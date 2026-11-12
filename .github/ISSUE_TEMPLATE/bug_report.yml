@@ -1,0 +1,87 @@
+name: Bug report
+description: Something in upe or the Unity helper package broke or behaved wrongly.
+title: "[Bug]: "
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One problem per issue. Redact private paths and project names (use `C:/work/...` or `<root>/...`).
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues.
+          required: true
+        - label: I am on the latest `main` (or I say which commit below).
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - CLI / setup (upe.toml, slots, worktrees)
+        - Merge and checks (loss check, YAML merge)
+        - Council / judging
+        - Unity Editor package (com.upe.agent)
+        - Docs
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Command you ran
+      placeholder: upe land dash
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. upe setup ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: upe commit or version
+      placeholder: main @ abc1234
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Windows version, Python version, Git version, Unity Editor version.
+      placeholder: Windows 11 24H2, Python 3.12.4, Git 2.47, Unity 6000.0.32f1
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output or logs
+      description: The relevant part of the console output or the run's report. Redacted.
+      render: text
+  - type: upload
+    id: attachments
+    attributes:
+      label: Files
+      description: Screenshots, a small repro project, report files. Redact first.
+    validations:
+      required: false

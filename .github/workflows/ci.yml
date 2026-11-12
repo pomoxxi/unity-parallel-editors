@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      full:
+        description: Run the full suite
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  fast:
+    name: Fast tests
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Git identity and long paths for test repos
+        run: |
+          git config --global user.name "ci"
+          git config --global user.email "ci@example.invalid"
+          git config --global core.longpaths true
+      - name: Install
+        run: python -m pip install -e ".[test]"
+      - name: Compile check
+        run: python -m compileall -q src tests
+      - name: Fast test modules
+        shell: pwsh
+        run: |
+          $FAST = @(
+            "test_agent_package.py","test_claims.py","test_council.py","test_editor.py",
+            "test_judge.py","test_kept.py","test_main.py","test_mutate.py","test_next_rows.py",
+            "test_project_settings.py","test_report_shapes.py","test_setup.py",
+            "test_unity_cli.py","test_work_states.py","test_checks.py","test_workspace.py",
+            "test_argv_capped.py","test_grep_owner.py"
+          )
+          $failed = @()
+          foreach ($m in $FAST) {
+            python -m unittest discover -s tests -p $m
+            if ($LASTEXITCODE -ne 0) { $failed += $m }
+          }
+          if ($failed.Count) { Write-Error "Failed: $($failed -join ', ')"; exit 1 }
+
+  full:
+    name: Full suite
+    # Every push to main, a manual run, or a PR labeled "full-tests".
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.full) ||
+      contains(github.event.pull_request.labels.*.name, 'full-tests')
+    runs-on: windows-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: |
+          git config --global user.name "ci"
+          git config --global user.email "ci@example.invalid"
+          git config --global core.longpaths true
+      - run: python -m pip install -e ".[test]"
+      - name: Full suite
+        run: python -m unittest discover -s tests -v
+
+  check:
+    name: Check
+    if: always()
+    needs: [fast, full]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require fast to pass and full to pass or be skipped
+        env:
+          FAST: ${{ needs.fast.result }}
+          FULL: ${{ needs.full.result }}
+        run: |
+          echo "fast=$FAST full=$FULL"
+          [ "$FAST" = "success" ] || exit 1
+          [ "$FULL" = "success" ] || [ "$FULL" = "skipped" ] || exit 1

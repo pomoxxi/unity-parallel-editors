@@ -1,0 +1,10 @@
+{
+  "name": "com.upe.agent",
+  "version": "0.0.1",
+  "displayName": "Unity Parallel Editors helper",
+  "description": "Editor-side helpers for unity-parallel-editors. Copied into each agent worktree by the tool and never committed to the project.",
+  "license": "MIT",
+  "author": { "name": "pomoxxi" },
+  "documentationUrl": "https://github.com/pomoxxi/unity-parallel-editors",
+  "unity": "6000.0"
+}

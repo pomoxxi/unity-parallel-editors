@@ -1,0 +1,77 @@
+# Copy to upe.toml and fill in your own paths. Relative paths are relative to this file.
+# The tool reads only the paths named here (and UPE_* variables you set); it searches nowhere else.
+
+# The Unity project's git repository (its main checkout).
+repo = "<path to your Unity project>"
+
+# Task worktrees, merge candidates and the tool's state (.upe/) go here.
+# Keep it on the same drive as the golden Library so the copy stays local.
+root = "<a folder on a drive with room: each slot is a checkout plus a Library>"
+
+# A checkout whose Library is fully imported. Its Library is copied into every
+# new worktree, so it must not be open in an Editor when a task starts.
+# `upe golden --create` makes it; nobody should work in it.
+golden = "<a folder beside root, on the same drive>"
+
+# Re-import the golden after every land, so new tasks start from a current
+# Library. At the same path this is about 20 s plus the changed files.
+refresh_golden_after_land = true
+
+# Git-ignored files and folders the project needs to compile (for example a paid
+# asset kept out of git), relative to `repo`, copied from there into every worktree.
+# A listed path that is missing stops every new worktree. None: leave it empty.
+local_copies = []
+
+# The folders that hold the project's tests, relative to `repo` (for example ["Assets/Tests/"]).
+# `start` names them to the agent, and `setup --check` checks each holds a tracked file at the target.
+# None: `start` prints instead a git command that lists the folders named Test or Tests.
+test_folders = []
+
+# The branch tasks land on, by fast-forward. For tests, use a throwaway branch
+# made for the purpose, not a branch people work on.
+target = "upe/test-base"
+
+# The Editor of the project's Unity version (ProjectSettings/ProjectVersion.txt), and the
+# `unity` CLI. Needed: the tool does not search for them (or set UPE_UNITY_EDITOR, UPE_UNITY_CLI).
+unity_editor = "<path to that version's Editor/Unity.exe>"
+unity_cli = "<path to unity.exe of the unity CLI>"
+# Optional: UnityYAMLMerge, when not the one beside unity_editor (Editor/Data/Tools/UnityYAMLMerge.exe).
+# yaml_merge = "<path to UnityYAMLMerge.exe>"
+
+# Threads per batch Editor, so several can run at once.
+job_workers = 4
+
+# CPU priority of everything the tool runs (git, robocopy, the CLI, Editors).
+# "below_normal" gives way to the user's own programs when the CPU is busy; the
+# judge's high/normal/low are then NORMAL/BELOW_NORMAL/IDLE. "normal" restores
+# ABOVE_NORMAL/NORMAL/BELOW_NORMAL.
+editor_priority = "below_normal"
+
+# The effort council members are started at. The tool calls no model, so it
+# cannot set this; `land` says it when it asks for members.
+council_effort = "medium"
+
+# How long one full EditMode run may take, in seconds. Measure your project's suite
+# and allow for several lands at once.
+test_timeout_s = 3600
+
+# Extra attempts for tests that fail. Tests with time limits fail when the machine
+# is busy. A test that passes on a retry does not stop a land; the council sees
+# its name. 0 turns this off.
+test_retries = 1
+
+# The priority judge (upe judge --watch): fixed rules, no model.
+# max_high is how many sessions may be high at once; free memory below
+# memory_short_mb counts as short (about one Editor's peak on a first open).
+max_high = 1
+memory_short_mb = 4096
+judge_every_s = 60
+
+# Files any task may write without claiming them.
+# shared = ["ProjectSettings/TagManager.asset", "ProjectSettings/EditorBuildSettings.asset", "Packages/packages-lock.json"]
+
+# Builders: a project path, and the static method that writes it. When a
+# merge cannot resolve one of these files, the target's version is kept and
+# the method re-runs on the merged project (it must be safe to run twice).
+[builders]
+# "Assets/Scenes/Arena.unity" = "Game.Builders.ArenaBuilder.Build"

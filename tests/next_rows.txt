@@ -1,0 +1,336 @@
+# `next` for each way a `land` ends (by row number) and each other state `status` gives.
+# Printed by tests/test_next_rows.py; the clock is fixed at 2026-11-01T12:00:00+00:00.
+# This file puts every line in front of the reader: it does not make a wrong line impossible.
+# Read each changed line before it is committed. Print it again with:
+#   PYTHONPATH=src python tests/test_next_rows.py --write
+
+## row 1: exit 0, `awaiting-council`
+  record: awaiting-council; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago); "awaiting-council: checks passed; ask two members" (60 s ago)
+  lock: free
+  job land-dash-20261101T110000: record says done, exit 0, dead pid
+  status: {"state": "awaiting-council"}
+  next: The council is judging it: commit nothing more, and ask `upe status dash` again later; if you are not sure the user knows the council for dash is waiting, tell them
+
+## row 2: exit 1, `conflict`
+  record: conflict; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago); "conflict: Assets/Scenes/Arena.unity" (60 s ago)
+  lock: free
+  job land-dash-20261101T110000: record says done, exit 1, dead pid
+  status: {"state": "conflict"}
+  next: The merge stopped on a conflict. To resolve it, run `git merge main` in its slot, keep both sides' intent, commit, and land again. If you cannot tell what the other side meant, tell the user
+
+## row 3: exit 1, `checks-failed`
+  record: checks-failed; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago); "checks-failed: 2 findings" (60 s ago)
+  lock: free
+  job land-dash-20261101T110000: record says done, exit 1, dead pid
+  status: {"state": "checks-failed"}
+  next: The checks failed: read `checks.md` in its run folder (`upe status dash` names it), fix in its slot, commit and land it again
+
+## row 4: exit 2 before "land started", on a task whose last entry is not a land's
+  record: working; entries: "working: started in its slot" (7200 s ago)
+  lock: free
+  job land-dash-20261101T115930: record says done, exit 2, dead pid
+  status: {"state": "working"}
+  next: To go on with it, work in its slot (its history names the worktree), commit, and land it when it is done
+
+## row 4 a: exit 2 before "land started", after an older land with a job that died
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago)
+  lock: free
+  job land-dash-20261101T110000: record says done, exit 3, dead pid
+  job land-dash-20261101T115930: record says done, exit 2, dead pid
+  status: {"state": "landing", "running": false, "job": "land-dash-20261101T110000", "job_state": "done", "exit_code": 3, "log": "<state>/jobs/land-dash-20261101T110000.log", "later_job": {"job": "land-dash-20261101T115930", "job_state": "done", "exit_code": 2}}
+  next: The land ended without a result (job land-dash-20261101T110000, exit 3): read why in its `log_tail` (`upe job land-dash-20261101T110000`); exit 2 is a refusal, and its reason is there. A later land, job land-dash-20261101T115930 (exit 2), stopped before it wrote its entry: `upe job land-dash-20261101T115930` says why (a refusal because the task was locked may have been this land holding the lock, or another upe command, a `finish` say, that held it after this land ended). Then go on in its slot and land it again, or tell the user if you cannot tell why it ended
+
+## row 4 b: exit 2 before "land started", after an older land with no job
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started; any earlier merge and its votes no longer count" (3600 s ago)
+  lock: free
+  job land-dash-20261101T115930: record says done, exit 2, dead pid
+  status: {"state": "landing", "running": false, "job": null, "job_state": null, "later_job": {"job": "land-dash-20261101T115930", "job_state": "done", "exit_code": 2}}
+  next: The land ended without a result, and it had no job, so no log of its own: its output was in the terminal that ran it. A later land, job land-dash-20261101T115930 (exit 2), stopped before it wrote its entry: `upe job land-dash-20261101T115930` says why (a refusal because the task was locked may have been this land holding the lock, or another upe command, a `finish` say, that held it after this land ended). Read that job's log first (`upe job land-dash-20261101T115930`). Go on in its slot and land it again, with --detach so its log keeps the reason; if it ends without a result again, tell the user
+
+## row 5: exit 2 after "land started"
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago)
+  lock: free
+  job land-dash-20261101T110000: record says done, exit 2, dead pid
+  status: {"state": "landing", "running": false, "job": "land-dash-20261101T110000", "job_state": "done", "exit_code": 2, "log": "<state>/jobs/land-dash-20261101T110000.log"}
+  next: The land ended without a result (job land-dash-20261101T110000, exit 2): read why in its `log_tail` (`upe job land-dash-20261101T110000`); exit 2 is a refusal, and its reason is there. Then go on in its slot and land it again, or tell the user if you cannot tell why it ended
+
+## row 6: another exception, with `--detach`
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago)
+  lock: free
+  job land-dash-20261101T110000: record says done, exit 3, dead pid
+  status: {"state": "landing", "running": false, "job": "land-dash-20261101T110000", "job_state": "done", "exit_code": 3, "log": "<state>/jobs/land-dash-20261101T110000.log"}
+  next: The land ended without a result (job land-dash-20261101T110000, exit 3): read why in its `log_tail` (`upe job land-dash-20261101T110000`); exit 2 is a refusal, and its reason is there. Then go on in its slot and land it again, or tell the user if you cannot tell why it ended
+
+## row 7: another exception, without `--detach`
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started; any earlier merge and its votes no longer count" (3600 s ago)
+  lock: free
+  status: {"state": "landing", "running": false, "job": null, "job_state": null}
+  next: The land ended without a result, and it had no job, so no log of its own: its output was in the terminal that ran it. Go on in its slot and land it again, with --detach so its log keeps the reason; if it ends without a result again, tell the user
+
+## row 8: Ctrl-C, without `--detach`
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started; any earlier merge and its votes no longer count" (3600 s ago)
+  lock: free
+  status: {"state": "landing", "running": false, "job": null, "job_state": null}
+  next: The land ended without a result, and it had no job, so no log of its own: its output was in the terminal that ran it. Go on in its slot and land it again, with --detach so its log keeps the reason; if it ends without a result again, tell the user
+
+## row 9 a: Ctrl-C, with `--detach`: the child runs on (as 12)
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago)
+  lock: held
+  job land-dash-20261101T110000: record says running, live pid
+  status: {"state": "landing", "running": true, "job": "land-dash-20261101T110000", "job_state": "running", "since": "2026-11-01T11:00:00+00:00", "over_limit": false, "log": "<state>/jobs/land-dash-20261101T110000.log"}
+  next: A land is running (job land-dash-20261101T110000): commit nothing; wait on it with `upe job land-dash-20261101T110000 --wait`, then ask `upe status dash` again. If it runs over 9 h 10 min, since 2026-11-01T11:00:00+00:00, tell the user; its log is <state>/jobs/land-dash-20261101T110000.log
+
+## row 9 b: Ctrl-C, with `--detach`: the child killed, its record left `running` (as 6)
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago)
+  lock: free
+  job land-dash-20261101T110000: record says running, dead pid
+  status: {"state": "landing", "running": false, "job": "land-dash-20261101T110000", "job_state": "done", "exit_code": 3, "log": "<state>/jobs/land-dash-20261101T110000.log"}
+  next: The land ended without a result (job land-dash-20261101T110000, exit 3): read why in its `log_tail` (`upe job land-dash-20261101T110000`); exit 2 is a refusal, and its reason is there. Then go on in its slot and land it again, or tell the user if you cannot tell why it ended
+
+## row 10: process killed or machine lost, with a job
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago)
+  lock: free
+  job land-dash-20261101T110000: record says running, dead pid
+  status: {"state": "landing", "running": false, "job": "land-dash-20261101T110000", "job_state": "done", "exit_code": 3, "log": "<state>/jobs/land-dash-20261101T110000.log"}
+  next: The land ended without a result (job land-dash-20261101T110000, exit 3): read why in its `log_tail` (`upe job land-dash-20261101T110000`); exit 2 is a refusal, and its reason is there. Then go on in its slot and land it again, or tell the user if you cannot tell why it ended
+
+## row 10 a: the same, with the pid used again by another program
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago)
+  lock: free
+  job land-dash-20261101T110000: record says running, live pid
+  status: {"state": "landing", "running": false, "job": "land-dash-20261101T110000", "job_state": "running", "log": "<state>/jobs/land-dash-20261101T110000.log"}
+  next: The land ended without a result: no process holds its lock, though the record of its job land-dash-20261101T110000 still says running (its process id is now another program's, or the job is writing its end at this moment). Read its log with `upe job land-dash-20261101T110000`, without --wait: that record may never say done. Then go on in its slot and land it again, or tell the user if you cannot tell why it ended
+
+## row 11: process killed or machine lost, without a job
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started; any earlier merge and its votes no longer count" (3600 s ago)
+  lock: free
+  status: {"state": "landing", "running": false, "job": null, "job_state": null}
+  next: The land ended without a result, and it had no job, so no log of its own: its output was in the terminal that ran it. Go on in its slot and land it again, with --detach so its log keeps the reason; if it ends without a result again, tell the user
+
+## row 12: still running, with a job
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago)
+  lock: held
+  job land-dash-20261101T110000: record says running, live pid
+  status: {"state": "landing", "running": true, "job": "land-dash-20261101T110000", "job_state": "running", "since": "2026-11-01T11:00:00+00:00", "over_limit": false, "log": "<state>/jobs/land-dash-20261101T110000.log"}
+  next: A land is running (job land-dash-20261101T110000): commit nothing; wait on it with `upe job land-dash-20261101T110000 --wait`, then ask `upe status dash` again. If it runs over 9 h 10 min, since 2026-11-01T11:00:00+00:00, tell the user; its log is <state>/jobs/land-dash-20261101T110000.log
+
+## row 13: still running, without a job (another terminal)
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started; any earlier merge and its votes no longer count" (3600 s ago)
+  lock: held
+  status: {"state": "landing", "running": true, "job": null, "job_state": null, "since": "2026-11-01T11:00:00+00:00", "over_limit": false}
+  next: A land, or another upe command on dash, is running, with no job to wait on: commit nothing, and ask `upe status dash` again in a few minutes. If it runs over 9 h 10 min, since 2026-11-01T11:00:00+00:00, tell the user; with no job, its output is in the terminal that runs it
+
+## row 13 a: the same, with an entry from before times were kept
+  record: working; entries: "working: started in its slot" (no time); "working: land started; any earlier merge and its votes no longer count" (no time)
+  lock: held
+  status: {"state": "landing", "running": true, "job": null, "job_state": null}
+  next: A land, or another upe command on dash, is running, with no job to wait on: commit nothing, and ask `upe status dash` again in a few minutes. The tool does not know when it started: if `upe status dash` still says this 9 h 10 min after you first asked, tell the user; with no job, its output is in the terminal that runs it
+
+## row 14: in the gap of a retry
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago); "working: target moved; landing again (2 of 3)" (60 s ago)
+  lock: held
+  job land-dash-20261101T110000: record says running, live pid
+  status: {"state": "landing", "running": true, "job": "land-dash-20261101T110000", "job_state": "running", "since": "2026-11-01T11:00:00+00:00", "over_limit": false, "log": "<state>/jobs/land-dash-20261101T110000.log"}
+  next: A land is running (job land-dash-20261101T110000): commit nothing; wait on it with `upe job land-dash-20261101T110000 --wait`, then ask `upe status dash` again. If it runs over 9 h 10 min, since 2026-11-01T11:00:00+00:00, tell the user; its log is <state>/jobs/land-dash-20261101T110000.log
+
+## row 15: a new `land --detach` before its child takes the lock, after an older land ended
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (600 s ago)
+  lock: free
+  job land-dash-20261101T110000: record says done, exit 2, dead pid
+  job land-dash-20261101T115930: record says started, live pid
+  status: {"state": "landing", "running": true, "job": "land-dash-20261101T115930", "job_state": "started", "since": "2026-11-01T11:59:30+00:00", "over_limit": false, "log": "<state>/jobs/land-dash-20261101T115930.log"}
+  next: A land is running (job land-dash-20261101T115930): commit nothing; wait on it with `upe job land-dash-20261101T115930 --wait`, then ask `upe status dash` again. If it runs over 9 h 10 min, since 2026-11-01T11:59:30+00:00, tell the user; its log is <state>/jobs/land-dash-20261101T115930.log
+
+## row 16: a land in its first seconds, before "land started" (or a `verdict`, `decide`, `finish`)
+  record: checks-failed; entries: "working: started in its slot" (7200 s ago); "checks-failed: 2 findings" (600 s ago)
+  lock: held
+  status: {"state": "checks-failed", "running": true, "job": null, "job_state": null}
+  next: A upe command works on dash now (a land in its first seconds, or a `verdict`, `decide` or `finish`): commit nothing, and ask `upe status dash` again in a few minutes. The tool does not know when it started: if it says the same for over an hour after you first asked, tell the user
+
+## row 16 a: the same, with its new job starting
+  record: checks-failed; entries: "working: started in its slot" (7200 s ago); "checks-failed: 2 findings" (600 s ago)
+  lock: held
+  job land-dash-20261101T115930: record says started, live pid
+  status: {"state": "checks-failed", "running": true, "job": "land-dash-20261101T115930", "job_state": "started", "since": "2026-11-01T11:59:30+00:00", "over_limit": false, "log": "<state>/jobs/land-dash-20261101T115930.log"}
+  next: A land of it, which has not yet written its first entry, is running (job land-dash-20261101T115930): commit nothing; wait on it with `upe job land-dash-20261101T115930 --wait`, then ask `upe status dash` again. If it runs over 9 h 10 min, since 2026-11-01T11:59:30+00:00, tell the user; its log is <state>/jobs/land-dash-20261101T115930.log
+
+## row 17: a land writes its result and frees the lock while `status` reads
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago)
+  lock: free; while it is tried, the land writes "awaiting-council: checks passed; ask two members"
+  job land-dash-20261101T110000: record says running, live pid
+  status: {"state": "awaiting-council"}
+  next: The council is judging it: commit nothing more, and ask `upe status dash` again later; if you are not sure the user knows the council for dash is waiting, tell them
+
+## row 18: the lock is held by another command, and the entry's job is over
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago)
+  lock: held
+  job land-dash-20261101T110000: record says done, exit 3, dead pid
+  status: {"state": "landing", "running": true, "job": "land-dash-20261101T110000", "job_state": "done", "exit_code": 3}
+  next: A land, or another upe command on dash, is running, with no job to wait on: commit nothing, and ask `upe status dash` again in a few minutes. The tool does not know when it started: if `upe status dash` still says this 9 h 10 min after you first asked, tell the user
+
+## row 19: a land hung, with a job
+  record: working; entries: "working: started in its slot" (43200 s ago); "working: land started (job land-dash-20261101T010000); any earlier merge and its votes no longer count" (39600 s ago)
+  lock: held
+  job land-dash-20261101T010000: record says running, live pid
+  status: {"state": "landing", "running": true, "job": "land-dash-20261101T010000", "job_state": "running", "since": "2026-11-01T01:00:00+00:00", "over_limit": true, "log": "<state>/jobs/land-dash-20261101T010000.log"}
+  next: A land is running (job land-dash-20261101T010000): commit nothing; wait on it with `upe job land-dash-20261101T010000 --wait`, then ask `upe status dash` again. It has run over 9 h 10 min, since 2026-11-01T01:00:00+00:00: tell the user, and keep waiting; its log is <state>/jobs/land-dash-20261101T010000.log
+
+## row 19 a: a land hung, without a job
+  record: working; entries: "working: started in its slot" (43200 s ago); "working: land started; any earlier merge and its votes no longer count" (39600 s ago)
+  lock: held
+  status: {"state": "landing", "running": true, "job": null, "job_state": null, "since": "2026-11-01T01:00:00+00:00", "over_limit": true}
+  next: A land, or another upe command on dash, is running, with no job to wait on: commit nothing, and ask `upe status dash` again in a few minutes. Its newest "land started" was over 9 h 10 min ago (at 2026-11-01T01:00:00+00:00), but a newer command may hold the lock: ask `upe status dash` again in 10 minutes, and if it still says it is over, tell the user, and keep waiting; with no job, its output is in the terminal that runs it
+
+## row 20: the clock set back after `detach`, the lock held
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T130000); any earlier merge and its votes no longer count" (60 s ago)
+  lock: held
+  job land-dash-20261101T130000: record says running, live pid
+  status: {"state": "landing", "running": true, "job": "land-dash-20261101T130000", "job_state": "running", "since": "2026-11-01T11:59:00+00:00", "over_limit": false, "log": "<state>/jobs/land-dash-20261101T130000.log"}
+  next: A land is running (job land-dash-20261101T130000): commit nothing; wait on it with `upe job land-dash-20261101T130000 --wait`, then ask `upe status dash` again. If it runs over 9 h 10 min, since 2026-11-01T11:59:00+00:00, tell the user; its log is <state>/jobs/land-dash-20261101T130000.log
+
+## row 20 a: the entry names a job from before the clock was set back, whose child took the lock and wrote it; the lock is now free, so that land is over, and its record still says started
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T130000); any earlier merge and its votes no longer count" (60 s ago)
+  lock: free
+  job land-dash-20261101T130000: record says started, live pid
+  status: {"state": "landing", "running": false, "job": "land-dash-20261101T130000", "job_state": "started", "log": "<state>/jobs/land-dash-20261101T130000.log"}
+  next: The land ended without a result: no process holds its lock, though the record of its job land-dash-20261101T130000 still says started (its process id is now another program's, or the job is writing its end at this moment). Read its log with `upe job land-dash-20261101T130000`, without --wait: that record may never say done. Then go on in its slot and land it again, or tell the user if you cannot tell why it ended
+
+## row 20 b: the clock set back after `detach`: an older land ended, and a new job from before the clock went back is starting, its child not yet at the lock (the lock free)
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (600 s ago)
+  lock: free
+  job land-dash-20261101T110000: record says done, exit 2, dead pid
+  job land-dash-20261101T130000: record says started, live pid
+  status: {"state": "landing", "running": false, "job": "land-dash-20261101T110000", "job_state": "done", "exit_code": 2, "log": "<state>/jobs/land-dash-20261101T110000.log", "later_job": {"job": "land-dash-20261101T130000", "job_state": "started"}}
+  next: The land ended without a result (job land-dash-20261101T110000, exit 2): read why in its `log_tail` (`upe job land-dash-20261101T110000`); exit 2 is a refusal, and its reason is there. A later land, job land-dash-20261101T130000, has not written its entry, and its record still says started: it may still be starting (as when the clock was set back after it was made), or its process id is now another program's. Ask `upe status dash` again in a minute; if it says the same, read its log with `upe job land-dash-20261101T130000`, without --wait. Do not land it again yet: only once `upe status dash` says that land has ended too, and names no later land still starting, go on in its slot and land it again. If it still names job land-dash-20261101T130000 as started 10 minutes after you first asked, read that job's log (`upe job land-dash-20261101T130000`, without --wait): if it says why that land stopped, or shows it never took the lock, go on in its slot and land it again, or tell the user if you cannot tell why it ended
+
+## row 20 c: the same, after an older land with no job
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started; any earlier merge and its votes no longer count" (600 s ago)
+  lock: free
+  job land-dash-20261101T130000: record says started, live pid
+  status: {"state": "landing", "running": false, "job": null, "job_state": null, "later_job": {"job": "land-dash-20261101T130000", "job_state": "started"}}
+  next: The land ended without a result, and it had no job, so no log of its own: its output was in the terminal that ran it. A later land, job land-dash-20261101T130000, has not written its entry, and its record still says started: it may still be starting (as when the clock was set back after it was made), or its process id is now another program's. Ask `upe status dash` again in a minute; if it says the same, read its log with `upe job land-dash-20261101T130000`, without --wait. Do not land it again yet: only once `upe status dash` says that land has ended too, and names no later land still starting, go on in its slot and land it again. If it still names job land-dash-20261101T130000 as started 10 minutes after you first asked, read that job's log (`upe job land-dash-20261101T130000`, without --wait): if it says why that land stopped, or shows it never took the lock, go on in its slot and land it again, with --detach so its log keeps the reason, or tell the user if you cannot tell why it ended. If that land ends without a result again, tell the user
+
+## row 21: two `land --detach` of one task in one second: the first died, the second was refused
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T115000); any earlier merge and its votes no longer count" (590 s ago)
+  lock: free
+  job land-dash-20261101T115000: record says done, exit 3, dead pid
+  job land-dash-20261101T115000-2: record says done, exit 2, dead pid
+  status: {"state": "landing", "running": false, "job": "land-dash-20261101T115000", "job_state": "done", "exit_code": 3, "log": "<state>/jobs/land-dash-20261101T115000.log", "later_job": {"job": "land-dash-20261101T115000-2", "job_state": "done", "exit_code": 2}}
+  next: The land ended without a result (job land-dash-20261101T115000, exit 3): read why in its `log_tail` (`upe job land-dash-20261101T115000`); exit 2 is a refusal, and its reason is there. A later land, job land-dash-20261101T115000-2 (exit 2), stopped before it wrote its entry: `upe job land-dash-20261101T115000-2` says why (a refusal because the task was locked may have been this land holding the lock, or another upe command, a `finish` say, that held it after this land ended). Then go on in its slot and land it again, or tell the user if you cannot tell why it ended
+
+## row -: the lock could not be tried, after a land entry
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago)
+  lock: cannot be tried
+  job land-dash-20261101T110000: record says done, exit 0, dead pid
+  status: {"state": "landing", "running": null, "job": "land-dash-20261101T110000", "job_state": "done", "exit_code": 0, "log": "<state>/jobs/land-dash-20261101T110000.log"}
+  next: The tool could not tell whether a land of dash still runs (its lock could not be tried): commit nothing, and ask `upe status dash` again; if it says the same, tell the user
+
+## row - a: the lock could not be tried, on another state
+  record: conflict; entries: "working: started in its slot" (7200 s ago); "conflict: Assets/Scenes/Arena.unity" (600 s ago)
+  lock: cannot be tried
+  status: {"state": "conflict", "running": null, "job": null, "job_state": null}
+  next: The tool could not tell whether a upe command works on dash now (its lock could not be tried): commit nothing, and ask `upe status dash` again; if it says the same, tell the user
+
+## row S working: a task being worked on
+  record: working; entries: "working: started in its slot" (600 s ago)
+  lock: free
+  status: {"state": "working"}
+  next: To go on with it, work in its slot (its history names the worktree), commit, and land it when it is done
+
+## row S checks-failed: exit 1, `checks-failed`, and none of the findings is in a path the branch changed (a false stop)
+  record: checks-failed; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago); "checks-failed: 24 findings; none of them is in a path the branch changed" (60 s ago)
+  lock: free
+  job land-dash-20261101T110000: record says done, exit 1, dead pid
+  status: {"state": "checks-failed"}
+  next: The checks failed, but none of the findings is in a path this branch changed (they read like the tool's or the slot's doing, not your work): do not fix them. Read `checks.md` in its run folder (`upe status dash` names it) and tell the user. If a finding does name a path you changed, it is yours: fix it in its slot, commit and land it again
+
+## row S refused: the council refused it
+  record: refused; entries: "working: started in its slot" (7200 s ago); "refused: 2 of 3 said no" (60 s ago)
+  lock: free
+  status: {"state": "refused"}
+  next: The council refused it: read `council.md` in its run folder, then fix it, commit and land it again, or give it up with `upe finish dash`, which frees its claim
+
+## row S awaiting-user: the user decides
+  record: awaiting-user; entries: "working: started in its slot" (7200 s ago); "awaiting-user: a split" (60 s ago)
+  lock: free
+  status: {"state": "awaiting-user"}
+  next: The user decides on it: tell the user, and wait
+
+## row S landed: landed
+  record: landed; entries: "working: started in its slot" (7200 s ago); "landed: abc1234" (60 s ago)
+  lock: free
+  status: {"state": "landed"}
+  next: It is done, and its slot is kept until it is finished: run `upe finish dash`, then pick a new task id for new work
+
+## row S finished: finished
+  record: finished; entries: "working: started in its slot" (7200 s ago); "finished: claim freed" (60 s ago)
+  lock: free
+  status: {"state": "finished"}
+  next: It is done: for new work, pick a new task id
+
+## row S starting: `starting` with no fact at all
+  status: {"state": "starting"}
+  next: The tool could not tell whether a `start` of dash still runs (its lock could not be tried): do not start dash again, and ask `upe status dash` again; if it says the same, tell the user
+
+## row S unreadable: a record that does not read
+  status: {"state": "unreadable"}
+  next: Its record does not read, so the tool cannot say where it is: tell the user
+
+## row S left-behind: a slot or a branch `upe/<task>` with no claim and no record (the `start` error)
+  status: {"state": "left-behind"}
+  next: No `start` of dash runs, and it has no claim and no record, but an earlier start of it left its slot or its branch `upe/dash` behind: run `upe finish dash`, which takes them away if they hold no work (if it refuses, tell the user what it says), then `upe start dash` again with your brief and claim
+
+## row St 1: a `start` making its slot (or a `finish` clearing a dead one)
+  record: none; claim: marked (made by `start` under the task's lock), made 120 s ago
+  lock: held
+  status: {"state": "starting", "claimed_since": "2026-11-01T11:58:00+00:00", "running": true, "over_limit": false}
+  next: A `start` of dash (or a `finish` clearing a start of it that died) is working on it now, which can take minutes, as when it copies the Library: do not start dash again, and ask `upe status dash` again in a few minutes. If it runs over 1 hour, since 2026-11-01T11:58:00+00:00, tell the user
+
+## row St 2: a `start` that hangs (the Library copy or the Unity CLI never returns)
+  record: none; claim: marked (made by `start` under the task's lock), made 7200 s ago
+  lock: held
+  status: {"state": "starting", "claimed_since": "2026-11-01T10:00:00+00:00", "running": true, "over_limit": true}
+  next: A `start` of dash (or a `finish` clearing a start of it that died) is working on it now, which can take minutes, as when it copies the Library: do not start dash again, and ask `upe status dash` again in a few minutes. It has run over 1 hour, since 2026-11-01T10:00:00+00:00: tell the user, and keep waiting. To stop it, the user ends that `upe start` process (with --detach, the pid in its job record, which `upe job <id>` shows); `upe status dash` then says what to run
+
+## row St 3: a `start` running, the clock set back after it claimed
+  record: none; claim: marked (made by `start` under the task's lock), made -3600 s ago
+  lock: held
+  status: {"state": "starting", "claimed_since": "2026-11-01T13:00:00+00:00", "running": true}
+  next: A `start` of dash (or a `finish` clearing a start of it that died) is working on it now, which can take minutes, as when it copies the Library: do not start dash again, and ask `upe status dash` again in a few minutes. The tool does not know when it started: if `upe status dash` still says this 1 hour after you first asked, tell the user
+
+## row St 4: a `start` killed, or interrupted, or whose clean-up failed, after it claimed
+  record: none; claim: marked (made by `start` under the task's lock), made 600 s ago
+  lock: free
+  status: {"state": "starting", "claimed_since": "2026-11-01T11:50:00+00:00", "running": false}
+  next: The `start` of dash died before it wrote its record, and nothing runs it now: run `upe finish dash`, which frees its claim, its slot and its branch if they hold no work, then `upe start dash` again with your brief and claim. If `finish` refuses, do what its message says (to run it again in a few minutes, when something still writes in the slot); otherwise tell the user what it says
+
+## row St 5: the same, long ago: the age does not change the answer
+  record: none; claim: marked (made by `start` under the task's lock), made 36000 s ago
+  lock: free
+  status: {"state": "starting", "claimed_since": "2026-11-01T02:00:00+00:00", "running": false}
+  next: The `start` of dash died before it wrote its record, and nothing runs it now: run `upe finish dash`, which frees its claim, its slot and its branch if they hold no work, then `upe start dash` again with your brief and claim. If `finish` refuses, do what its message says (to run it again in a few minutes, when something still writes in the slot); otherwise tell the user what it says
+
+## row St 6: a marked claim whose lock cannot be tried
+  record: none; claim: marked (made by `start` under the task's lock), made 600 s ago
+  lock: cannot be tried
+  status: {"state": "starting", "claimed_since": "2026-11-01T11:50:00+00:00", "running": null}
+  next: The tool could not tell whether a `start` of dash still runs (its lock could not be tried): do not start dash again, and ask `upe status dash` again; if it says the same, tell the user
+
+## row St 7: a claim from before claims were marked (no mark), young
+  record: none; claim: no mark (made before claims were marked), made 600 s ago
+  lock: free
+  status: {"state": "starting", "claimed_since": "2026-11-01T11:50:00+00:00", "running": null}
+  next: The claim of dash was made by an older version of the tool, which leaves no mark, so the tool cannot tell whether its `start` still runs, and `upe finish dash` does not free it: do not start dash again, and ask `upe status dash` again in a few minutes; if `claimed_since` is more than 30 minutes ago and it still says this, tell the user, who can free it by hand once no `upe start` of it runs
+
+## row St 8: the same, over 30 minutes old
+  record: none; claim: no mark (made before claims were marked), made 7200 s ago
+  lock: free
+  status: {"state": "starting", "claimed_since": "2026-11-01T10:00:00+00:00", "running": null}
+  next: The claim of dash was made by an older version of the tool, which leaves no mark, so the tool cannot tell whether its `start` still runs, and `upe finish dash` does not free it: do not start dash again, and ask `upe status dash` again in a few minutes; it was claimed over 30 minutes ago (at 2026-11-01T10:00:00+00:00): tell the user, who can free it by hand once no `upe start` of it runs
+
+## row St 9: `start --detach` before its child claims
+  record: none; claim: none
+  lock: free
+  job start-dash-20261101T115930: record says started, live pid
+  status: {"state": "starting", "running": true, "job": "start-dash-20261101T115930", "job_state": "started"}
+  next: A `start` of dash is beginning (job start-dash-20261101T115930) and has not claimed its paths yet: do not start dash again; wait on it with `upe job start-dash-20261101T115930 --wait`, then ask `upe status dash` again

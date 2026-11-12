@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+
+# This machine's configuration (`upe setup` writes these)
+/upe.toml
+/upe.toml.new
+/upe.*.toml
+!/upe.example.toml
+.env
+.env.*
+
+# The tool's runtime state, if a root is ever put inside the checkout
+/.upe/
+*.log
+
+# Agent apps' local settings and state
+/.claude/
+/.codex/
+/.cursor/
+/.mcp.json
+
+# Local notes and files that are not part of the project
+/.scratch/
+/local/
+
+# Raw reports the research scripts write
+/research/data/

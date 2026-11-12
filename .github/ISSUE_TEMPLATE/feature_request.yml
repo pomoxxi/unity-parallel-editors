@@ -1,0 +1,28 @@
+name: Feature request
+description: A concrete, scoped change you would like. For open-ended ideas use Discussions.
+title: "[Feature]: "
+labels: [enhancement, needs-triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what stops you today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What should upe do? Commands, config keys, output.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or workarounds you tried
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Would you open a PR for it?
+      options: ["No", "Yes, after we agree on the approach", "Maybe"]

@@ -1,0 +1,50 @@
+name: Design feedback or field report
+description: Review of the design, or how upe went on your own Unity project.
+title: "[Feedback]: "
+labels: [feedback]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. Critical feedback is the most useful kind. Two things help most:
+        a review of the merge checks (above all the loss check, `src/upe/merge.py`, DESIGN.md "The flow"),
+        and reports from trying it on a real project.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of feedback
+      options:
+        - Design review (I read the code or DESIGN.md)
+        - Field report (I ran it on a project)
+        - Docs / onboarding
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: The one or two things you most want me to know.
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Where it is weak, what you would do instead, what surprised you. Link files and lines.
+  - type: textarea
+    id: field
+    attributes:
+      label: For field reports
+      description: Project size (assets, scenes), Unity version, number of agents/slots, how long a land took, what broke.
+  - type: input
+    id: background
+    attributes:
+      label: Your background (optional)
+      description: e.g. "Unity tools dev, 8 years, large team VCS". Helps me weigh the advice.
+  - type: checkboxes
+    id: followup
+    attributes:
+      label: Follow-up
+      options:
+        - label: OK to ask me follow-up questions here.

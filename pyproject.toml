@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "unity-parallel-editors"
+version = "0.0.1"
+description = "Several AI agents working on one Unity project at once, each in its own worktree and Editor."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "pomoxxi" }]
+requires-python = ">=3.11"
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Build Tools",
+]
+dependencies = []
+
+[project.optional-dependencies]
+# The loss check's sweep (tests/test_merge.py, DifferentTextsSweep) reads YAML with it; without it the sweep is skipped.
+test = ["ruamel.yaml>=0.18"]
+# For the measurement scripts in research/scripts/.
+research = ["psutil>=5.9"]
+
+[project.urls]
+Homepage = "https://github.com/pomoxxi/unity-parallel-editors"
+
+[project.scripts]
+upe = "upe.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

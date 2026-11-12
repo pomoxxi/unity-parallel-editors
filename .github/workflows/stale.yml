@@ -1,0 +1,20 @@
+name: Close stale "needs more info" issues
+on:
+  schedule: [{ cron: "17 6 * * *" }]
+  workflow_dispatch:
+permissions:
+  issues: write
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          only-issue-labels: "needs more info"
+          days-before-issue-stale: -1
+          days-before-issue-close: 14
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
+          stale-issue-label: "needs more info"
+          close-issue-reason: not_planned
+          close-issue-message: "Closing: no reply in 14 days. Comment with the details and I will reopen."
