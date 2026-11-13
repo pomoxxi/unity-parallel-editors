@@ -4,7 +4,7 @@ Several AI coding agents work on one Unity project at once. Each agent gets its 
 
 **Why.** Unity lets only one Editor open a project folder. With one checkout and one Editor, agents queue behind each other. And merging scenes and prefabs is risky: UnityYAMLMerge can drop a change and still report success.
 
-**Status:** alpha. Windows only. Measured on one large Unity 6 HDRP project (about 17,000 tracked files).
+**Status:** alpha. Windows only. Measured on one large Unity 6 HDRP project (about 17,000 tracked files), by its author; no one else has run it yet. Expect rough edges, and [report what breaks](https://github.com/pomoxxi/unity-parallel-editors/issues/new?template=bug_report.yml).
 
 ## Requirements
 
