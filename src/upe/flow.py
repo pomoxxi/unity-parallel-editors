@@ -2425,7 +2425,11 @@ class Flow:
             exit_code, timed_out, cleared = run.exit_code, False, False
         except subprocess.TimeoutExpired:  # the Editor and its children are ended by now (`run_tree`)
             # A killed Editor leaves Temp/UnityLockfile behind; the next Editor in the slot would find it.
-            exit_code, timed_out, cleared = None, True, clear_stale_lock(path)
+            exit_code, timed_out = None, True
+            try:
+                cleared = clear_stale_lock(path)
+            except OSError:  # a killed child can hold a file in Temp/ a moment longer; the answer matters more
+                cleared = False
         return {"task": task_id, "method": method, "quit": quit, "exit_code": exit_code, "timed_out": timed_out,
                 "time_limit_s": BATCH_TIMEOUT_S, "cleared_stale_lock": cleared, "log": str(log),
                 **self._after_editor(task_id, path, before)}

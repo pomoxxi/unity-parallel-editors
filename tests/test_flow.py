@@ -2932,6 +2932,23 @@ class EditorCommandTests(FlowCase):
         self.assertIs(result["cleared_stale_lock"], True)
         self.assertFalse((wt / "Temp").exists())
 
+    def test_a_lock_that_cannot_be_cleared_after_a_timeout_still_gives_the_answer(self):
+        # A killed child of the Editor can hold a file in Temp/ for a moment after the kill.
+        flow = self.flow()
+        flow.start("dash", "Add a dash.", ["Assets/Features/Dash/"])
+        wt = flow.workspaces.workspace("dash").path
+
+        def killed_with_its_lock(argv, **kw):
+            write(wt, "Temp/UnityLockfile", "")
+            raise subprocess.TimeoutExpired(argv, kw.get("timeout"))
+
+        flow.editor._runner = killed_with_its_lock
+        with mock.patch("upe.workspace.shutil.rmtree", side_effect=PermissionError("in use")):
+            result = flow.editor_run("dash", "A.B.C", quit=False)
+        self.assertIs(result["timed_out"], True)
+        self.assertIs(result["cleared_stale_lock"], False)
+        self.assertIn("restored", result)  # the restore of files outside the claim still ran
+
 
 class CandidateBranchTests(FlowCase):
     def test_a_tag_named_like_the_candidate_branch_does_not_stop_the_land(self):
