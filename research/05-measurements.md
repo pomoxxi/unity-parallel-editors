@@ -4,7 +4,7 @@ A case study: the tool measured on one real project, 2026-10-26 to 2026-11-12. T
 
 ## The project and the machines
 
-- **The project.** A Unity 6 HDRP project on Unity 6000.3, with about 17,000 tracked files. A worktree checkout is about 7.5 GB, Git LFS content included, and took 1:51 to 2:44 minutes to make. A long-used `Library` was 8.5 GB in about 71,000 files; one imported from nothing was 5.8 GB in about 57,000 files. The log counts about 3,000 scripts and 9,400 other assets.
+- **The project.** A Unity 6 URP project on Unity 6000.3, with about 17,000 tracked files. A worktree checkout is about 7.5 GB, Git LFS content included, and took 1:51 to 2:44 minutes to make. A long-used `Library` was 8.5 GB in about 71,000 files; one imported from nothing was 5.8 GB in about 57,000 files. The log counts about 3,000 scripts and 9,400 other assets.
 - **The 16 GB machine.** 15.7 GB usable, with other programs running.
 - **The 32 GB machine.** 12 threads and 31.4 GB usable, with other programs running; the CPU was often busy before any Editor ran.
 - Both ran Windows 11 on NVMe disks, with the `unity` CLI 1.0.0-beta.14 under a Unity Personal licence.
