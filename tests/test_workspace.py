@@ -386,6 +386,22 @@ class DeadStartSlotTests(Base):
         os.utime(w.path / "Assets" / "a.txt", (future, future))
         self.assertEqual(self.ws.recent_change(w.path, 120), os.path.join("Assets", "a.txt"))
 
+    @unittest.skipUnless(sys.platform == "win32", "junctions")
+    def test_a_junction_is_not_walked_into(self):
+        # What a junction points at is not the slot's; a file written there is no change in the slot.
+        import time
+
+        w = self.ws.create("feat-1")
+        target = self.tmp / "elsewhere"
+        target.mkdir()
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(w.path / "Library" / "Linked"), str(target)], check=True,
+                       capture_output=True)
+        time.sleep(0.2)
+        since = time.time()
+        time.sleep(0.2)
+        (target / "fresh.txt").write_text("written after `since`")
+        self.assertIsNone(self.ws.recent_change(w.path, 0, now=since))
+
     def test_a_file_held_open_and_written_is_named(self):
         # The folder listing's time of a file held open for writing stays old on Windows; os.stat's does not.
         import os

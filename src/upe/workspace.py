@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import stat
 import time
 import uuid
 import subprocess
@@ -59,10 +60,19 @@ class Workspace:
         return self.path / "Library"
 
 
-def is_link(path: Path) -> bool:
+def is_link(path: Path | str) -> bool:
     """A symlink or an NTFS junction. Copying into or deleting through one reaches its target."""
-    isjunction = getattr(os.path, "isjunction", lambda p: False)
-    return os.path.islink(path) or isjunction(path)
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    return stat.S_ISLNK(st.st_mode) or _is_junction(st)
+
+
+def _is_junction(st: os.stat_result) -> bool:
+    # Read from the reparse tag: os.path.isjunction and DirEntry.is_junction are Python 3.12+, and a stand-in
+    # that answers False on 3.11 would let /MIR delete through a junction.
+    return getattr(st, "st_reparse_tag", 0) == stat.IO_REPARSE_TAG_MOUNT_POINT
 
 
 def lock_state(project: Path) -> str:
@@ -432,10 +442,10 @@ class Workspaces:
             for entry in entries:
                 rel = os.path.relpath(entry.path, path)
                 try:
-                    if os.stat(entry.path, follow_symlinks=False).st_mtime > since:
+                    st = os.stat(entry.path, follow_symlinks=False)
+                    if st.st_mtime > since:
                         return rel
-                    junction = getattr(entry, "is_junction", lambda: False)()
-                    if entry.is_dir(follow_symlinks=False) and not junction:
+                    if entry.is_dir(follow_symlinks=False) and not _is_junction(st):
                         todo.append(entry.path)
                 except FileNotFoundError:
                     return rel
