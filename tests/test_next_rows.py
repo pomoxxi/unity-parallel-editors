@@ -235,7 +235,9 @@ def _shown(row: Row, root: Path) -> tuple[dict, str]:
         return row.lock
 
     with mock.patch.object(flowmod, "_now", lambda: NOW), \
-            mock.patch.object(flowmod, "process_alive", lambda pid, created=None: pid == LIVE),             mock.patch.object(flow, "task_lock_held", lock),             mock.patch.object(flow, "_moved_under", lambda _task_id: row.moved):
+            mock.patch.object(flowmod, "process_alive", lambda pid, created=None: pid == LIVE), \
+            mock.patch.object(flow, "task_lock_held", lock), \
+            mock.patch.object(flow, "_moved_under", lambda _task_id: row.moved):
         state, land, step = flow.situation(task)
     return {"state": state, **(land.to_json() if land else {})}, step
 

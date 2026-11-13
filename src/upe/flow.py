@@ -241,12 +241,10 @@ def next_step(task_id: str, state: str, land: Land | None = None, *, target: str
         "finished": "It is done: for new work, pick a new task id",
     }
     if state == "awaiting-council" and moved_to:
-        # The council's votes are on a merge that can no longer land: every minute they spend on it is lost, and the
-        # agent learned of it only from the second verdict.
-        return (f"{target or 'The target'} moved since this merge (it is at {moved_to[:12]} now), so no verdict can "
+        # The council's votes are on a merge that can no longer land, so every minute spent waiting on them is lost.
+        return (f"{target or 'The target'} moved since this merge (it is at {moved_to[:12]} now), so no vote can "
                 f"land it: land it again now (`upe land {task_id}`, with --detach), which makes a new merge with its "
-                f"own checks and council brief. Tell the user that the council on the old merge can stop: `upe "
-                f"verdict` refuses it")
+                f"own checks and council brief. Tell the user that the council on the old merge can stop")
     if state == "checks-failed" and outside_branch:
         return (f"The checks failed, but none of the findings is in a path this branch changed (they read like the "
                 f"tool's or the slot's doing, not your work): do not fix them. Read `checks.md` in its run folder "
@@ -967,8 +965,9 @@ class Flow:
 
     def moved_since(self, report: MergeReport) -> str:
         """The target's tip when the target moved since `report`'s merge so that the merge can no longer land
-        (`Merger.land` only fast-forwards: the same test as there); "" when it can still land, or when git cannot
-        tell (no target, no commit)."""
+        (`Merger.land` only fast-forwards, and this is the test it makes first); "" when it can still land, or when
+        git cannot tell (no target, no commit). Unlike `Merger.land`, which refuses on any failure, only git's
+        answer "not an ancestor" counts as moved here: a refusal on a guess would stop a merge that can land."""
         tip = self._tip()
         if not tip or not report.committed or report.target != self.config.target:
             return ""
@@ -1527,9 +1526,11 @@ class Flow:
         if verdict.commit != report.committed:
             raise FlowError(f"the verdict names commit {verdict.commit or '(none)'}, but the merge under review is "
                             f"{report.committed}; read the current council brief")
-        moved = self.moved_since(report)
+        # Only a GO needs the fast-forward. A NO-GO judges the work, which the target's move does not change, and two
+        # of them refuse the task with their findings kept, so it is recorded as before.
+        moved = self.moved_since(report) if verdict.verdict == "GO" else ""
         if moved:
-            raise FlowError(f"{report.target} moved since this merge (it is at {moved[:12]} now), so no verdict can "
+            raise FlowError(f"{report.target} moved since this merge (it is at {moved[:12]} now), so a GO cannot "
                             f"land it; this one is not recorded, and your part is done. The task's agent lands "
                             f"{task_id} again, and a new council judges the new merge")
         verdict.agent = self._identity()

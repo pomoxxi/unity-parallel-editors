@@ -410,8 +410,7 @@ class LandTests(FlowCase):
         asset(self.repo, "Assets/Features/Kick/Kick.cs", "class Kick {}\n")
         commit(self.repo, "another task landed first")
         tip = git(self.repo, "rev-parse", "main").strip()
-        # Before, only the second vote found out, so the agent waited and the council judged a merge that could
-        # not land. `status` says so as soon as the target moves.
+        # `status` says to land again as soon as the target moves, before any further vote, and a GO is refused.
         state, _, step = flow.situation(flow.task("dash"))
         self.assertEqual(state, "awaiting-council")
         self.assertIn("upe land dash", step)
@@ -442,6 +441,19 @@ class LandTests(FlowCase):
         self.assertEqual(outcome.state, "working")
         self.assertIn("upe land dash", outcome.message)
         self.assertEqual(git(self.repo, "rev-parse", "main").strip(), tip)
+
+    def test_two_no_go_on_a_moved_target_still_refuse_with_their_findings(self):
+        # A refusal needs no fast-forward, so a moved target must not throw away a NO-GO and its findings.
+        flow = self.flow()
+        self.start_and_race(flow)
+        Flow.land(flow, "dash")
+        asset(self.repo, "Assets/Features/Kick/Kick.cs", "class Kick {}\n")
+        commit(self.repo, "another task landed first")
+        tip = git(self.repo, "rev-parse", "main").strip()
+        flow.vote_as("opus", "dash", "NO-GO")
+        outcome = flow.vote_as("sonnet", "dash", "NO-GO")
+        self.assertEqual((outcome.state, git(self.repo, "rev-parse", "main").strip()), ("refused", tip))
+        self.assertIn("Assets/Features/Dash/Dash.cs", (flow.run_dir("dash") / "council.md").read_text(encoding="utf-8"))
 
     def test_both_no_go_refuses_and_keeps_the_claim(self):
         flow = self.flow(council=FakeCouncil("NO-GO", "NO-GO"))
