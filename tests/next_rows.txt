@@ -19,6 +19,14 @@
   status: {"state": "awaiting-council"}
   next: main moved since this merge (it is at 9f3c2e1d4b5a now), so no vote can land it: land it again now (`upe land dash`, with --detach), which makes a new merge with its own checks and council brief. Tell the user that the council on the old merge can stop
 
+## row 1 b: the same, with a vote already recorded on the old merge
+  record: awaiting-council; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago); "awaiting-council: checks passed; ask two members" (60 s ago)
+  lock: free
+  target: moved since the merge, to 9f3c2e1d4b5a; a vote is recorded on that merge
+  job land-dash-20261101T110000: record says done, exit 0, dead pid
+  status: {"state": "awaiting-council"}
+  next: main moved since this merge (it is at 9f3c2e1d4b5a now), so no vote can land it, and landing again clears the votes already recorded on it. First read them, in `verdicts/` in its run folder (`upe status dash` names it): fix in its slot and commit what a NO-GO found (tell the user if you think it is wrong), then land it again (`upe land dash`, with --detach), which makes a new merge with its own checks and council brief. Tell the user that the council on the old merge can stop
+
 ## row 2: exit 1, `conflict`
   record: conflict; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago); "conflict: Assets/Scenes/Arena.unity" (60 s ago)
   lock: free

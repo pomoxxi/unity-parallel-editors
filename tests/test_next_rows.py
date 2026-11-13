@@ -73,6 +73,7 @@ class Row:
     claim: str = ""  # for `start`: "marked" (made by `start` under the task's lock), "old" (before claims were marked), "" none
     claimed: int = 0  # for `start`: when the claim was made, seconds before the clock
     moved: str = ""  # the target's tip, when it moved since the merge under review (`Flow.moved_since`)
+    voted: bool = False  # with `moved`: a vote is already recorded on that merge (`Flow._has_votes`)
 
 
 def _job(state: str, *, exit_code: int | None = None, pid: int = DEAD, error: str = "") -> dict:
@@ -87,6 +88,9 @@ ROWS = [
     Row("1 a", "exit 0, `awaiting-council`, then another land moved the target before the votes", "awaiting-council",
         [(STARTED, 7200), (land_started(A), 3600), ("awaiting-council: checks passed; ask two members", 60)],
         {A: _job("done", exit_code=0)}, moved="9f3c2e1d4b5a" + "0" * 28),
+    Row("1 b", "the same, with a vote already recorded on the old merge", "awaiting-council",
+        [(STARTED, 7200), (land_started(A), 3600), ("awaiting-council: checks passed; ask two members", 60)],
+        {A: _job("done", exit_code=0)}, moved="9f3c2e1d4b5a" + "0" * 28, voted=True),
     Row("2", "exit 1, `conflict`", "conflict",
         [(STARTED, 7200), (land_started(A), 3600), ("conflict: Assets/Scenes/Arena.unity", 60)],
         {A: _job("done", exit_code=1)}),
@@ -237,7 +241,8 @@ def _shown(row: Row, root: Path) -> tuple[dict, str]:
     with mock.patch.object(flowmod, "_now", lambda: NOW), \
             mock.patch.object(flowmod, "process_alive", lambda pid, created=None: pid == LIVE), \
             mock.patch.object(flow, "task_lock_held", lock), \
-            mock.patch.object(flow, "_moved_under", lambda _task_id: row.moved):
+            mock.patch.object(flow, "_moved_under", lambda _task_id: row.moved), \
+            mock.patch.object(flow, "_has_votes", lambda _task_id: row.voted):
         state, land, step = flow.situation(task)
     return {"state": state, **(land.to_json() if land else {})}, step
 
@@ -256,7 +261,8 @@ def _facts(row: Row) -> list[str]:
     lines.append("  lock: " + {True: "held", False: "free", None: "cannot be tried"}[row.lock]
                  + (f"; while it is tried, the land writes \"{row.then[1]}\"" if row.then else ""))
     if row.moved:
-        lines.append(f"  target: moved since the merge, to {row.moved[:12]}")
+        lines.append(f"  target: moved since the merge, to {row.moved[:12]}"
+                     + ("; a vote is recorded on that merge" if row.voted else ""))
     for name, record in row.jobs.items():
         pid = "live pid" if record.get("pid") == LIVE else "dead pid"
         code = f", exit {record['exit_code']}" if "exit_code" in record else ""

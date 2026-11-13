@@ -199,7 +199,7 @@ def land_job(history: Sequence[str]) -> str:
 
 
 def next_step(task_id: str, state: str, land: Land | None = None, *, target: str = "", outside_branch: bool = False,
-              moved_to: str = "") -> str:
+              moved_to: str = "", voted: bool = False) -> str:
     """What an agent picking up `task_id` does next, in `state` (one of STATES, or `starting`, `unreadable`,
     `landing`). `land` says whether a land runs, for `landing`, and for any other state whether a command
     works on the task now (`running` true: a `land` in its first seconds, a `verdict`, `decide` or `finish`);
@@ -207,7 +207,8 @@ def next_step(task_id: str, state: str, land: Land | None = None, *, target: str
     `Flow.start_facts`); `left-behind` is a slot or branch of the task with no claim and no record.
     `outside_branch`, for `checks-failed`: the land's entry says no finding is in a path the branch
     changed (NOT_IN_BRANCH), so the step says to tell the user, not to fix. `moved_to`, for `awaiting-council`: the
-    target's tip, when the target moved since the merge under review so that merge can no longer land (`moved_since`)."""
+    target's tip, when the target moved since the merge under review so that merge can no longer land (`moved_since`);
+    `voted`, with it: a vote is already recorded on that merge (`Flow._has_votes`)."""
     if state == "landing":
         return _landing_step(task_id, land or Land(running=None))
     if state == "starting":
@@ -242,9 +243,15 @@ def next_step(task_id: str, state: str, land: Land | None = None, *, target: str
     }
     if state == "awaiting-council" and moved_to:
         # The council's votes are on a merge that can no longer land, so every minute spent waiting on them is lost.
-        return (f"{target or 'The target'} moved since this merge (it is at {moved_to[:12]} now), so no vote can "
-                f"land it: land it again now (`upe land {task_id}`, with --detach), which makes a new merge with its "
-                f"own checks and council brief. Tell the user that the council on the old merge can stop")
+        moved = f"{target or 'The target'} moved since this merge (it is at {moved_to[:12]} now), so no vote can land it"
+        again = (f"(`upe land {task_id}`, with --detach), which makes a new merge with its own checks and council "
+                 f"brief. Tell the user that the council on the old merge can stop")
+        if voted:
+            # A new land clears the votes, and a NO-GO's findings with them: they are read first.
+            return (f"{moved}, and landing again clears the votes already recorded on it. First read them, in "
+                    f"`verdicts/` in its run folder (`upe status {task_id}` names it): fix in its slot and commit what "
+                    f"a NO-GO found (tell the user if you think it is wrong), then land it again {again}")
+        return f"{moved}: land it again now {again}"
     if state == "checks-failed" and outside_branch:
         return (f"The checks failed, but none of the findings is in a path this branch changed (they read like the "
                 f"tool's or the slot's doing, not your work): do not fix them. Read `checks.md` in its run folder "
@@ -953,7 +960,14 @@ class Flow:
         moved = (self._moved_under(task.task_id)
                  if state == "awaiting-council" and (land is None or land.running is False) else "")
         return Situation(task, state, land, next_step(task.task_id, state, land, target=task.target,
-                                                      outside_branch=outside, moved_to=moved))
+                                                      outside_branch=outside, moved_to=moved,
+                                                      voted=bool(moved) and self._has_votes(task.task_id)))
+
+    def _has_votes(self, task_id: str) -> bool:
+        """Whether a vote is recorded on the task's merge: any file in its ballot, read or not, so a vote that does
+        not read is not taken for none."""
+        folder = self.ballot(task_id).folder
+        return folder.is_dir() and any(folder.glob("*.json"))
 
     def _moved_under(self, task_id: str) -> str:
         """`moved_since` for the task's merge under review; "" when its record does not read."""

@@ -455,6 +455,23 @@ class LandTests(FlowCase):
         self.assertEqual((outcome.state, git(self.repo, "rev-parse", "main").strip()), ("refused", tip))
         self.assertIn("Assets/Features/Dash/Dash.cs", (flow.run_dir("dash") / "council.md").read_text(encoding="utf-8"))
 
+    def test_after_a_move_the_step_says_to_read_a_recorded_vote_before_landing_again(self):
+        # Landing again clears the ballot, so the step that says to land again must not lose a NO-GO's findings.
+        flow = self.flow()
+        self.start_and_race(flow)
+        Flow.land(flow, "dash")
+        asset(self.repo, "Assets/Features/Kick/Kick.cs", "class Kick {}\n")
+        commit(self.repo, "another task landed first")
+        step = flow.situation(flow.task("dash"))[2]
+        self.assertIn("land it again now", step)
+        self.assertNotIn("verdicts/", step)
+        flow.vote_as("opus", "dash", "NO-GO")
+        step = flow.situation(flow.task("dash"))[2]
+        self.assertIn("`verdicts/`", step)
+        self.assertIn("what a NO-GO found", step)
+        self.assertNotIn("land it again now", step)
+        self.assertEqual([v.verdict for v in flow.ballot("dash").verdicts()], ["NO-GO"])
+
     def test_both_no_go_refuses_and_keeps_the_claim(self):
         flow = self.flow(council=FakeCouncil("NO-GO", "NO-GO"))
         self.start_and_race(flow)
