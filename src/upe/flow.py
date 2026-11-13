@@ -38,7 +38,7 @@ from .checks import (
 from .kept import BY_CLASSES, BY_FULL_RUN, BY_OWN, ClassRun, FullScenes, Kept, KeptStore, SceneStore, decide as known_failures
 from .claims import Claim, ClaimError, ClaimRegistry, Entry, file_lock, lock_held, normalize, unclaimed, write_atomic
 from .council import Ballot, CouncilError, Evidence, Verdict, brief, decide as count_votes, gather_diffs, render_decision
-from .editor import Editor, find_editor, yaml_merge_for
+from .editor import BATCH_TIMEOUT_S, Editor, find_editor, yaml_merge_for
 from .merge import CANDIDATE_PREFIX, LOCK_FILE, MANIFEST, MergeError, Merger, MergeReport, Step, unity_yaml_merge, yaml_merge_flags
 from . import identity as identities
 from . import judge as judging
@@ -2410,14 +2410,22 @@ class Flow:
                 "failed": sorted(run.failed or ()), "flaky": sorted(run.flaky), "tests": run_counts(run, results) if run.finished else 0, "results": str(results),
                 **self._after_editor(task_id, path, before)}
 
-    def editor_run(self, task_id: str, method: str, args: Sequence[str] = (), graphics: bool = False) -> dict:
-        """Run one static Editor method in a batch Editor in the task's slot, then quit. `graphics` keeps a GPU device."""
+    def editor_run(self, task_id: str, method: str, args: Sequence[str] = (), graphics: bool = False,
+                   quit: bool = True) -> dict:
+        """Run one static Editor method in a batch Editor in the task's slot, then quit. `graphics` keeps a GPU device.
+        `quit=False` leaves `-quit` off, for a method that enters Play mode and ends the Editor itself with
+        EditorApplication.Exit: with `-quit`, Unity quits as soon as the method returns, before Play starts."""
         path = self._slot(task_id)
         log = path / "Logs" / f"upe-run-{method.rsplit('.', 1)[-1]}.log"
         before = self._dirt(path)
-        run = self.editor.batch(path, log, "-executeMethod", method, *args, quit=True, graphics=graphics)
-        return {"task": task_id, "method": method, "exit_code": run.exit_code, "log": str(run.log),
-                **self._after_editor(task_id, path, before)}
+        try:
+            run = self.editor.batch(path, log, "-executeMethod", method, *args, quit=quit, graphics=graphics,
+                                    timeout=BATCH_TIMEOUT_S)
+            exit_code, timed_out = run.exit_code, False
+        except subprocess.TimeoutExpired:  # `subprocess.run` has killed the Editor by now
+            exit_code, timed_out = None, True
+        return {"task": task_id, "method": method, "quit": quit, "exit_code": exit_code, "timed_out": timed_out,
+                "time_limit_s": BATCH_TIMEOUT_S, "log": str(log), **self._after_editor(task_id, path, before)}
 
     def _dirt(self, path: Path) -> tuple[set[str], set[str]]:
         """Tracked files with changed content, and untracked files, in a slot."""

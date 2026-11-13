@@ -181,6 +181,31 @@ class MainTests(unittest.TestCase):
         self.assertEqual(record["state"], "running")
         self.assertNotIn("exit_code", record)
 
+    def test_editor_run_leaves_quit_off_only_when_asked(self):
+        seen = []
+
+        def editor_run(flow, task_id, method, args, graphics, quit):
+            seen.append((method, list(args), quit))
+            return {"task": task_id, "method": method, "exit_code": 0, "quit": quit}
+
+        with mock.patch.object(cli.Flow, "editor_run", editor_run):
+            self.assertEqual(self.main("--json", "editor", "run", "dash", "A.B.C", "--", "-x")[0], 0)
+            self.assertEqual(self.main("--json", "editor", "run", "dash", "A.B.C", "--no-quit", "--", "-x")[0], 0)
+        self.assertEqual(seen, [("A.B.C", ["-x"], True), ("A.B.C", ["-x"], False)])
+
+    def test_a_detached_editor_run_keeps_no_quit(self):
+        self.state().mkdir(parents=True)
+        launched = []
+
+        def popen(argv, **kwargs):
+            launched.append(argv)
+            return mock.Mock(pid=os.getpid())
+
+        with mock.patch.object(cli.subprocess, "Popen", popen), mock.patch.object(cli, "agent_process", lambda: {}):
+            self.main("--json", "--detach", "editor", "run", "dash", "A.B.C", "--no-quit")
+        self.assertIn("--no-quit", launched[0])
+        self.assertNotIn("--detach", launched[0])
+
     def test_a_verdict_file_with_a_bom_is_read(self):
         verdict = self.tmp / "v.json"
         verdict.write_bytes(b"\xef\xbb\xbf" + b'{"commit": "x", "verdict": "GO"}')

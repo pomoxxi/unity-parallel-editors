@@ -19,6 +19,9 @@ from .workspace import lock_state
 
 Runner = Callable[..., subprocess.CompletedProcess]
 
+# How long a batch Editor may run. A run past it is killed: `subprocess.run` ends the process before it raises.
+BATCH_TIMEOUT_S = 3600.0
+
 
 class EditorError(Exception):
     pass
@@ -66,7 +69,7 @@ class Editor:
         *args: str,
         quit: bool = True,
         graphics: bool = False,
-        timeout: float = 3600.0,
+        timeout: float = BATCH_TIMEOUT_S,
     ) -> EditorRun:
         """Run a batch Editor. `graphics` keeps a GPU device; loading scenes needs one."""
         project = Path(project)
@@ -86,12 +89,12 @@ class Editor:
 
     def execute_method(
         self, project: Path | str, method: str, log: Path | str, args: Sequence[str] = (),
-        graphics: bool = False, timeout: float = 3600.0,
+        graphics: bool = False, timeout: float = BATCH_TIMEOUT_S,
     ) -> EditorRun:
         """Run one static method. The method ends the Editor itself with EditorApplication.Exit."""
         return self.batch(project, log, "-executeMethod", method, *args, quit=False, graphics=graphics, timeout=timeout)
 
-    def refresh(self, project: Path | str, log: Path | str, timeout: float = 3600.0) -> EditorRun:
+    def refresh(self, project: Path | str, log: Path | str, timeout: float = BATCH_TIMEOUT_S) -> EditorRun:
         """Open and close the project once, so Unity imports and rewrites derived files."""
         return self.batch(project, log, quit=True, timeout=timeout)
 

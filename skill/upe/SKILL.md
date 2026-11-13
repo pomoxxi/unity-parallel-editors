@@ -55,10 +55,12 @@ That is the installed tool. Never run `python -m upe` from inside a worktree: a 
 
    ```
    {{UPE}} --json editor test <task> --filter MyFeatureTests      # EditMode tests; the Editor must be closed. `tests` says how many ran; 0 means your filter matched nothing, and exits 1. `flaky` names tests that passed only on a retry
-   {{UPE}} --json editor run <task> My.Namespace.Tool.Method [--graphics]   # one static method, then quit
+   {{UPE}} --json editor run <task> My.Namespace.Tool.Method [--graphics] [--no-quit] [-- <Editor args>]   # one static method, then quit
    {{UPE}} --json editor open <task>      # a live batch Editor, driven with `unity command ... --project-path <slot>`
    {{UPE}} --json editor close <task>     # always close what you opened
    ```
+
+   Give `--no-quit` only for a method that enters Play mode and ends the Editor itself with `EditorApplication.Exit`: without it, Unity quits as soon as the method returns, before Play starts. Such a run is still killed after 3600 s (`time_limit_s`); then `timed_out` is true and `exit_code` is null. The answer's `quit` says whether `-quit` was passed.
 
    Opening the project makes Unity rewrite some files of its own. After `editor test` and `editor run`, the tool puts back the tracked files the run changed outside your claim (`restored`) and lists the files the run made (`new_files`). Commit the ones inside your claim, such as the `.meta` of a new script, which Unity writes the first time it sees the file. Delete any in `new_files_outside_claim`.
 

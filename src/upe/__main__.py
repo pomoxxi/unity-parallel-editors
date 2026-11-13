@@ -91,6 +91,9 @@ def parser() -> argparse.ArgumentParser:
     erun.add_argument("method", help="Namespace.Class.Method")
     erun.add_argument("args", nargs="*", help="extra command-line arguments for the Editor")
     erun.add_argument("--graphics", action="store_true", help="keep a GPU device (loading scenes with terrain needs one)")
+    erun.add_argument("--no-quit", action="store_true",
+                      help="leave -quit off, for a method that enters Play mode and calls EditorApplication.Exit itself; "
+                           "the run is still killed after the batch time limit")
 
     activity = sub.add_parser("activity", help="say what a session is doing, for the priority judge")
     activity.add_argument("session", help="the task id")
@@ -282,7 +285,7 @@ def run(flow: Flow, args: argparse.Namespace) -> int:
         elif args.action == "test":
             result = flow.editor_test(args.task_id, args.filter)
         else:
-            result = flow.editor_run(args.task_id, args.method, args.args, args.graphics)
+            result = flow.editor_run(args.task_id, args.method, args.args, args.graphics, quit=not args.no_quit)
         emit(args, result, json.dumps(result, indent=2))
         if args.action == "test":
             return 0 if result["finished"] and not result["failed"] and result["tests"] else 1

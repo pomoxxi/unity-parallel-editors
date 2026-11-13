@@ -16,7 +16,7 @@ from xml.sax.saxutils import escape
 
 from upe.agent_package import PACKAGE_NAME, PIPELINE
 from upe.claims import ClaimRefused
-from upe.editor import Editor
+from upe.editor import BATCH_TIMEOUT_S, Editor
 from upe.flow import Config, Flow, FlowError, TargetMoved, Task, next_step
 from upe.merge import LOCK_FILE, Merger
 from upe.unity_cli import UnityCli
@@ -2885,6 +2885,36 @@ class EditorCommandTests(FlowCase):
         self.assertEqual(status, [f" M {own}", f" M {mine}"], "only the agent's own work is left")
         self.assertEqual((wt / own).read_text(), "class Dash { int inProgress; }\n", "the agent's work kept")
         self.assertEqual((wt / mine).read_text(), "class Y { int mine; }\n", "the agent's work kept")
+
+
+    def test_a_run_quits_unless_the_method_ends_the_editor_itself(self):
+        flow = self.flow()
+        flow.start("dash", "Add a dash.", ["Assets/Features/Dash/"])
+        result = flow.editor_run("dash", "A.B.C", ["-x", "1"])
+        self.assertEqual(self.unity.runs[-1][-5:], ["-executeMethod", "A.B.C", "-x", "1", "-quit"])
+        self.assertIs(result["quit"], True)
+        result = flow.editor_run("dash", "A.B.C", ["-x", "1"], quit=False)
+        self.assertEqual(self.unity.runs[-1][-4:], ["-executeMethod", "A.B.C", "-x", "1"])
+        self.assertNotIn("-quit", self.unity.runs[-1])
+        self.assertIs(result["quit"], False)
+
+    def test_a_run_past_its_time_limit_is_reported_not_raised(self):
+        # A method left without `-quit` that never calls EditorApplication.Exit would hold the slot for good.
+        flow = self.flow()
+        flow.start("dash", "Add a dash.", ["Assets/Features/Dash/"])
+        limits = []
+
+        def never_exits(argv, **kw):
+            limits.append(kw.get("timeout"))
+            raise subprocess.TimeoutExpired(argv, kw.get("timeout"))
+
+        flow.editor._runner = never_exits
+        result = flow.editor_run("dash", "A.B.C", quit=False)
+        self.assertEqual(limits, [BATCH_TIMEOUT_S])
+        self.assertIs(result["timed_out"], True)
+        self.assertIsNone(result["exit_code"])
+        self.assertEqual(result["time_limit_s"], BATCH_TIMEOUT_S)
+        self.assertIs(result["quit"], False)
 
 
 class CandidateBranchTests(FlowCase):
