@@ -17,7 +17,7 @@ from xml.sax.saxutils import escape
 from upe.agent_package import PACKAGE_NAME, PIPELINE
 from upe.claims import ClaimRefused
 from upe.editor import Editor
-from upe.flow import Config, Flow, FlowError, TargetMoved, Task
+from upe.flow import Config, Flow, FlowError, TargetMoved, Task, next_step
 from upe.merge import LOCK_FILE, Merger
 from upe.unity_cli import UnityCli
 
@@ -405,17 +405,43 @@ class LandTests(FlowCase):
         outcome = Flow.land(flow, "dash")
         cand = flow.candidate_path("dash")
         self.assertEqual(git(cand, "status", "--porcelain"), "")  # what Unity rewrote during the checks is put back
+        self.assertEqual(flow.situation(flow.task("dash"))[2], next_step("dash", "awaiting-council"))
+        flow.vote_as("opus", "dash", "GO")
         asset(self.repo, "Assets/Features/Kick/Kick.cs", "class Kick {}\n")
         commit(self.repo, "another task landed first")
-        flow.vote_as("opus", "dash", "GO")
-        outcome = flow.vote_as("sonnet", "dash", "GO")
-        self.assertEqual(outcome.state, "working")
-        self.assertIn("upe land dash", outcome.message)
-        self.assertTrue((flow.run_dir("dash") / "council.md").exists())
+        tip = git(self.repo, "rev-parse", "main").strip()
+        # Before, only the second vote found out, so the agent waited and the council judged a merge that could
+        # not land. `status` says so as soon as the target moves.
+        state, _, step = flow.situation(flow.task("dash"))
+        self.assertEqual(state, "awaiting-council")
+        self.assertIn("upe land dash", step)
+        self.assertIn(tip[:12], step)
+        with self.assertRaises(FlowError) as refused:
+            flow.vote_as("sonnet", "dash", "GO")
+        self.assertIn("not recorded", str(refused.exception))
+        self.assertEqual([v.member for v in flow.ballot("dash").verdicts()], ["opus"])
+        self.assertEqual((flow.task("dash").state, git(self.repo, "rev-parse", "main").strip()), ("awaiting-council", tip))
         self.assertEqual(Flow.land(flow, "dash").state, "awaiting-council")
-        self.assertFalse((flow.run_dir("dash") / "council.md").exists())  # the new members see no earlier votes
+        self.assertEqual(flow.ballot("dash").verdicts(), [])  # the new members see no earlier votes
+        self.assertEqual(flow.situation(flow.task("dash"))[2], next_step("dash", "awaiting-council"))
         self.assertEqual(flow.land("dash").state, "landed")  # merged again onto the new target, a new council
         self.assertTrue((self.repo / "Assets/Features/Kick/Kick.cs").exists())
+
+    def test_a_target_that_moves_while_the_vote_lands_lands_nothing(self):
+        # The refusal reads the target before the vote; a land can still move it between that read and the
+        # fast-forward. That merge must not land either.
+        flow = self.flow()
+        self.start_and_race(flow)
+        Flow.land(flow, "dash")
+        flow.vote_as("opus", "dash", "GO")
+        asset(self.repo, "Assets/Features/Kick/Kick.cs", "class Kick {}\n")
+        commit(self.repo, "another task landed first")
+        tip = git(self.repo, "rev-parse", "main").strip()
+        with mock.patch.object(Flow, "moved_since", lambda self, report: ""):
+            outcome = flow.vote_as("sonnet", "dash", "GO")
+        self.assertEqual(outcome.state, "working")
+        self.assertIn("upe land dash", outcome.message)
+        self.assertEqual(git(self.repo, "rev-parse", "main").strip(), tip)
 
     def test_both_no_go_refuses_and_keeps_the_claim(self):
         flow = self.flow(council=FakeCouncil("NO-GO", "NO-GO"))

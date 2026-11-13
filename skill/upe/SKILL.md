@@ -119,4 +119,4 @@ You may sit only if you did not do this work, plan this task or resolve a confli
 
    A GO may carry findings that do not block. Recording the second vote can take a few minutes, because it lands the merge and refreshes the golden.
 
-   Your vote is final once recorded. The second verdict decides at once: both GO lands, both NO-GO refuses, a split goes to the user. If the target moved since the merge, nothing lands and the answer says so (`working`, exit 1): the task is merged again and a new council votes on the new commit. Your part is done either way.
+   Your vote is final once recorded. The second verdict decides at once: both GO lands, both NO-GO refuses, a split goes to the user. If the target moved since the merge, `upe verdict` refuses your vote and records nothing (exit 2); if it moves while the second vote lands, nothing lands and the answer says so (`working`, exit 1). Either way the task is merged again and a new council votes on the new commit, and your part is done.
