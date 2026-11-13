@@ -102,6 +102,7 @@ Every agent runs as the user, on the user's machine, with the user's rights (dec
 - The landed commit must still be the candidate branch's tip, and the task branch's tip must be inside it.
 - A target that tracks a remote is refused (it could reach `origin`), and so is a target checked out anywhere outside the tool's slots.
 - A verdict must name the merged commit, so a vote on an earlier merge does not count. A new `land` voids the earlier merge and its votes as it starts, so one cut short leaves nothing open to votes.
+- A GO on a merge the target has moved past is refused and not recorded, since that merge can no longer fast-forward. A NO-GO is still recorded: it judges the work, and a refusal needs no fast-forward. `status` says so as soon as the target moves, and its next step is to land again, so the council and the agent stop spending time on a merge that cannot land. A new land clears the votes recorded on the old merge, so when there are some the step says to read them first, and to fix what a NO-GO found.
 - A verdict from the agent process that ran `land`, or from the same process as the other member, is refused ([`identity.py`](src/upe/identity.py)). That stops an agent voting on its own work, or through its own subagents.
 - `upe decide` needs a person at a terminal, typing the task id.
 

@@ -198,14 +198,17 @@ def land_job(history: Sequence[str]) -> str:
     return ""
 
 
-def next_step(task_id: str, state: str, land: Land | None = None, *, target: str = "", outside_branch: bool = False) -> str:
+def next_step(task_id: str, state: str, land: Land | None = None, *, target: str = "", outside_branch: bool = False,
+              moved_to: str = "", voted: bool = False) -> str:
     """What an agent picking up `task_id` does next, in `state` (one of STATES, or `starting`, `unreadable`,
     `landing`). `land` says whether a land runs, for `landing`, and for any other state whether a command
     works on the task now (`running` true: a `land` in its first seconds, a `verdict`, `decide` or `finish`);
     `target` names the target, for `conflict`. For `starting`, `land` is what is known of the `start` (see
     `Flow.start_facts`); `left-behind` is a slot or branch of the task with no claim and no record.
     `outside_branch`, for `checks-failed`: the land's entry says no finding is in a path the branch
-    changed (NOT_IN_BRANCH), so the step says to tell the user, not to fix."""
+    changed (NOT_IN_BRANCH), so the step says to tell the user, not to fix. `moved_to`, for `awaiting-council`: the
+    target's tip, when the target moved since the merge under review so that merge can no longer land (`moved_since`);
+    `voted`, with it: a vote is already recorded on that merge (`Flow._has_votes`)."""
     if state == "landing":
         return _landing_step(task_id, land or Land(running=None))
     if state == "starting":
@@ -238,6 +241,17 @@ def next_step(task_id: str, state: str, land: Land | None = None, *, target: str
                   "then pick a new task id for new work",
         "finished": "It is done: for new work, pick a new task id",
     }
+    if state == "awaiting-council" and moved_to:
+        # The council's votes are on a merge that can no longer land, so every minute spent waiting on them is lost.
+        moved = f"{target or 'The target'} moved since this merge (it is at {moved_to[:12]} now), so no vote can land it"
+        again = (f"(`upe land {task_id}`, with --detach), which makes a new merge with its own checks and council "
+                 f"brief. Tell the user that the council on the old merge can stop")
+        if voted:
+            # A new land clears the votes, and a NO-GO's findings with them: they are read first.
+            return (f"{moved}, and landing again clears the votes already recorded on it. First read them, in "
+                    f"`verdicts/` in its run folder (`upe status {task_id}` names it): fix in its slot and commit what "
+                    f"a NO-GO found (tell the user if you think it is wrong), then land it again {again}")
+        return f"{moved}: land it again now {again}"
     if state == "checks-failed" and outside_branch:
         return (f"The checks failed, but none of the findings is in a path this branch changed (they read like the "
                 f"tool's or the slot's doing, not your work): do not fix them. Read `checks.md` in its run folder "
@@ -943,8 +957,37 @@ class Flow:
         else:
             state = "landing"
         outside = state == "checks-failed" and bool(task.history) and task.history[-1].endswith(NOT_IN_BRANCH)
+        moved = (self._moved_under(task.task_id)
+                 if state == "awaiting-council" and (land is None or land.running is False) else "")
         return Situation(task, state, land, next_step(task.task_id, state, land, target=task.target,
-                                                      outside_branch=outside))
+                                                      outside_branch=outside, moved_to=moved,
+                                                      voted=bool(moved) and self._has_votes(task.task_id)))
+
+    def _has_votes(self, task_id: str) -> bool:
+        """Whether a vote is recorded on the task's merge: any file in its ballot, read or not, so a vote that does
+        not read is not taken for none."""
+        folder = self.ballot(task_id).folder
+        return folder.is_dir() and any(folder.glob("*.json"))
+
+    def _moved_under(self, task_id: str) -> str:
+        """`moved_since` for the task's merge under review; "" when its record does not read."""
+        try:
+            report = report_from_json((self.run_dir(task_id) / "merge.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError, KeyError):
+            return ""
+        return self.moved_since(report)
+
+    def moved_since(self, report: MergeReport) -> str:
+        """The target's tip when the target moved since `report`'s merge so that the merge can no longer land
+        (`Merger.land` only fast-forwards, and this is the test it makes first); "" when it can still land, or when
+        git cannot tell (no target, no commit). Unlike `Merger.land`, which refuses on any failure, only git's
+        answer "not an ancestor" counts as moved here: a refusal on a guess would stop a merge that can land."""
+        tip = self._tip()
+        if not tip or not report.committed or report.target != self.config.target:
+            return ""
+        code = self._runner(["git", *SAFE_GIT, "-C", str(self.config.repo), "merge-base", "--is-ancestor", tip,
+                             report.committed], capture_output=True).returncode
+        return tip if code == 1 else ""  # 1: not an ancestor; any other failure says nothing
 
     def candidate_path(self, task_id: str) -> Path | None:
         """The slot holding the task's merge candidate, if it has one."""
@@ -1497,6 +1540,13 @@ class Flow:
         if verdict.commit != report.committed:
             raise FlowError(f"the verdict names commit {verdict.commit or '(none)'}, but the merge under review is "
                             f"{report.committed}; read the current council brief")
+        # Only a GO needs the fast-forward. A NO-GO judges the work, which the target's move does not change, and two
+        # of them refuse the task with their findings kept, so it is recorded as before.
+        moved = self.moved_since(report) if verdict.verdict == "GO" else ""
+        if moved:
+            raise FlowError(f"{report.target} moved since this merge (it is at {moved[:12]} now), so a GO cannot "
+                            f"land it; this one is not recorded, and your part is done. The task's agent lands "
+                            f"{task_id} again, and a new council judges the new merge")
         verdict.agent = self._identity()
         lander_file = self.run_dir(task_id) / "lander.json"
         lander = json.loads(lander_file.read_text(encoding="utf-8")) if lander_file.exists() else None

@@ -17,7 +17,7 @@ from xml.sax.saxutils import escape
 from upe.agent_package import PACKAGE_NAME, PIPELINE
 from upe.claims import ClaimRefused
 from upe.editor import Editor
-from upe.flow import Config, Flow, FlowError, TargetMoved, Task
+from upe.flow import Config, Flow, FlowError, TargetMoved, Task, next_step
 from upe.merge import LOCK_FILE, Merger
 from upe.unity_cli import UnityCli
 
@@ -405,17 +405,72 @@ class LandTests(FlowCase):
         outcome = Flow.land(flow, "dash")
         cand = flow.candidate_path("dash")
         self.assertEqual(git(cand, "status", "--porcelain"), "")  # what Unity rewrote during the checks is put back
+        self.assertEqual(flow.situation(flow.task("dash"))[2], next_step("dash", "awaiting-council"))
+        flow.vote_as("opus", "dash", "GO")
         asset(self.repo, "Assets/Features/Kick/Kick.cs", "class Kick {}\n")
         commit(self.repo, "another task landed first")
-        flow.vote_as("opus", "dash", "GO")
-        outcome = flow.vote_as("sonnet", "dash", "GO")
-        self.assertEqual(outcome.state, "working")
-        self.assertIn("upe land dash", outcome.message)
-        self.assertTrue((flow.run_dir("dash") / "council.md").exists())
+        tip = git(self.repo, "rev-parse", "main").strip()
+        # `status` says to land again as soon as the target moves, before any further vote, and a GO is refused.
+        state, _, step = flow.situation(flow.task("dash"))
+        self.assertEqual(state, "awaiting-council")
+        self.assertIn("upe land dash", step)
+        self.assertIn(tip[:12], step)
+        with self.assertRaises(FlowError) as refused:
+            flow.vote_as("sonnet", "dash", "GO")
+        self.assertIn("not recorded", str(refused.exception))
+        self.assertEqual([v.member for v in flow.ballot("dash").verdicts()], ["opus"])
+        self.assertEqual((flow.task("dash").state, git(self.repo, "rev-parse", "main").strip()), ("awaiting-council", tip))
         self.assertEqual(Flow.land(flow, "dash").state, "awaiting-council")
-        self.assertFalse((flow.run_dir("dash") / "council.md").exists())  # the new members see no earlier votes
+        self.assertEqual(flow.ballot("dash").verdicts(), [])  # the new members see no earlier votes
+        self.assertEqual(flow.situation(flow.task("dash"))[2], next_step("dash", "awaiting-council"))
         self.assertEqual(flow.land("dash").state, "landed")  # merged again onto the new target, a new council
         self.assertTrue((self.repo / "Assets/Features/Kick/Kick.cs").exists())
+
+    def test_a_target_that_moves_while_the_vote_lands_lands_nothing(self):
+        # The refusal reads the target before the vote; a land can still move it between that read and the
+        # fast-forward. That merge must not land either.
+        flow = self.flow()
+        self.start_and_race(flow)
+        Flow.land(flow, "dash")
+        flow.vote_as("opus", "dash", "GO")
+        asset(self.repo, "Assets/Features/Kick/Kick.cs", "class Kick {}\n")
+        commit(self.repo, "another task landed first")
+        tip = git(self.repo, "rev-parse", "main").strip()
+        with mock.patch.object(Flow, "moved_since", lambda self, report: ""):
+            outcome = flow.vote_as("sonnet", "dash", "GO")
+        self.assertEqual(outcome.state, "working")
+        self.assertIn("upe land dash", outcome.message)
+        self.assertEqual(git(self.repo, "rev-parse", "main").strip(), tip)
+
+    def test_two_no_go_on_a_moved_target_still_refuse_with_their_findings(self):
+        # A refusal needs no fast-forward, so a moved target must not throw away a NO-GO and its findings.
+        flow = self.flow()
+        self.start_and_race(flow)
+        Flow.land(flow, "dash")
+        asset(self.repo, "Assets/Features/Kick/Kick.cs", "class Kick {}\n")
+        commit(self.repo, "another task landed first")
+        tip = git(self.repo, "rev-parse", "main").strip()
+        flow.vote_as("opus", "dash", "NO-GO")
+        outcome = flow.vote_as("sonnet", "dash", "NO-GO")
+        self.assertEqual((outcome.state, git(self.repo, "rev-parse", "main").strip()), ("refused", tip))
+        self.assertIn("Assets/Features/Dash/Dash.cs", (flow.run_dir("dash") / "council.md").read_text(encoding="utf-8"))
+
+    def test_after_a_move_the_step_says_to_read_a_recorded_vote_before_landing_again(self):
+        # Landing again clears the ballot, so the step that says to land again must not lose a NO-GO's findings.
+        flow = self.flow()
+        self.start_and_race(flow)
+        Flow.land(flow, "dash")
+        asset(self.repo, "Assets/Features/Kick/Kick.cs", "class Kick {}\n")
+        commit(self.repo, "another task landed first")
+        step = flow.situation(flow.task("dash"))[2]
+        self.assertIn("land it again now", step)
+        self.assertNotIn("verdicts/", step)
+        flow.vote_as("opus", "dash", "NO-GO")
+        step = flow.situation(flow.task("dash"))[2]
+        self.assertIn("`verdicts/`", step)
+        self.assertIn("what a NO-GO found", step)
+        self.assertNotIn("land it again now", step)
+        self.assertEqual([v.verdict for v in flow.ballot("dash").verdicts()], ["NO-GO"])
 
     def test_both_no_go_refuses_and_keeps_the_claim(self):
         flow = self.flow(council=FakeCouncil("NO-GO", "NO-GO"))
