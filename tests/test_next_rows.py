@@ -216,7 +216,7 @@ def _shown(row: Row, root: Path) -> tuple[dict, str]:
             (flow.state_dir / "claims.json").write_text(json.dumps({TASK: {
                 "entries": ["assets/features/dash/"], "since": ago(row.claimed).isoformat(timespec="seconds"), **mark}}))
         with mock.patch.object(flowmod, "_now", lambda: NOW), \
-                mock.patch.object(flowmod, "process_alive", lambda pid: pid == LIVE), \
+                mock.patch.object(flowmod, "process_alive", lambda pid, created=None: pid == LIVE), \
                 mock.patch.object(flow, "task_lock_held", lambda _task_id: row.lock):
             claim = flow.starting().get(TASK)
             facts = flow.start_facts(TASK, claim)
@@ -231,7 +231,7 @@ def _shown(row: Row, root: Path) -> tuple[dict, str]:
         return row.lock
 
     with mock.patch.object(flowmod, "_now", lambda: NOW), \
-            mock.patch.object(flowmod, "process_alive", lambda pid: pid == LIVE), \
+            mock.patch.object(flowmod, "process_alive", lambda pid, created=None: pid == LIVE), \
             mock.patch.object(flow, "task_lock_held", lock):
         state, land, step = flow.situation(task)
     return {"state": state, **(land.to_json() if land else {})}, step

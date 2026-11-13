@@ -229,6 +229,51 @@ class MainTests(unittest.TestCase):
         _, out, _ = self.main("--json", "job", "land-dash-20261028T120000")
         self.assertEqual(json.loads(out)["state"], "running")
 
+    @unittest.skipUnless(sys.platform == "win32", "Windows gives a dead process's id to new processes")
+    def test_a_job_whose_pid_a_new_process_has_is_done(self):
+        # A killed land's pid, given to another program, read as the land still running: `job --wait` waited its
+        # whole bound, and `status` told the agent to wait on it.
+        from upe import flow as flowmod
+
+        jobs = self.tmp / "work" / ".upe" / "jobs"
+        jobs.mkdir(parents=True)
+        mine = flowmod.process_created(os.getpid())
+        self.assertIsInstance(mine, int)
+        path = jobs / "land-dash-20261028T120000.json"
+        text = json.dumps({"job": "x", "state": "running", "pid": os.getpid(), "created": mine - 1, "log": "nope"})
+        path.write_text(text)
+        _, out, _ = self.main("--json", "job", "land-dash-20261028T120000", "--wait", "30")
+        answer = json.loads(out)
+        self.assertEqual((answer["state"], answer["exit_code"]), ("done", 3))
+        self.assertEqual(path.read_text(), text)  # asking changes nothing
+        path.write_text(json.dumps({"job": "x", "state": "running", "pid": os.getpid(), "created": mine, "log": "nope"}))
+        _, out, _ = self.main("--json", "job", "land-dash-20261028T120000")
+        self.assertEqual(json.loads(out)["state"], "running")
+
+    @unittest.skipUnless(sys.platform == "win32", "a process's start time is read on Windows only")
+    def test_every_pid_a_job_record_gets_has_its_start_time(self):
+        # A pid written without its own start time would make the job read as gone, or keep the reused-id fault.
+        from upe import flow as flowmod
+
+        self.state().mkdir(parents=True)
+        mine = flowmod.process_created(os.getpid())
+        with mock.patch.object(cli.subprocess, "Popen", lambda argv, **kwargs: mock.Mock(pid=os.getpid())), \
+                mock.patch.object(cli, "agent_process", lambda: {}):
+            job = json.loads(self.main("--json", "--detach", "land", "dash")[1])["job"]
+        record = json.loads((self.state() / "jobs" / f"{job}.json").read_text())
+        self.assertEqual((record["state"], record["pid"], record["created"]), ("started", os.getpid(), mine))
+        written = []
+        real = cli._job_update
+
+        def update(flow, job_id, **fields):
+            written.append(fields)
+            real(flow, job_id, **fields)
+
+        with mock.patch.object(cli.Flow, "land", lambda flow, task_id: Outcome(task_id, "awaiting-council", "x")), \
+                mock.patch.object(cli, "lower_own_priority"), mock.patch.object(cli, "_job_update", update):
+            self.main("--job-id", job, "--json", "land", "dash")
+        self.assertEqual([(f["pid"], f.get("created")) for f in written if "pid" in f], [(os.getpid(), mine)])
+
     # `status` gives `next` from the one `next_step`, and what it knows of a land ---------
 
     JOB = "land-dash-20261101T120000"  # made long ago (see flow.JOB_START_GRACE_S)

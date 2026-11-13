@@ -20,7 +20,7 @@ from .agent_package import AgentPackageError
 from .claims import ClaimError, write_atomic
 from .council import CouncilError
 from .editor import EditorError
-from .flow import Config, Flow, FlowError, next_step, process_alive, start_fields
+from .flow import Config, Flow, FlowError, next_step, process_alive, process_created, start_fields
 from .identity import agent_process
 from .judge import ACTIVITIES, BASES, JudgeError, activities, declare, set_priority_class
 from .merge import MergeError
@@ -133,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command in HEAVY_COMMANDS:
             lower_own_priority(flow.config.editor_priority)
         if args.job_child:
-            _job_update(flow, args.job_child, state="running", pid=os.getpid())
+            _job_update(flow, args.job_child, state="running", pid=os.getpid(), created=process_created(os.getpid()))
         code = run(flow, args)
     except ERRORS as exc:
         code = 2
@@ -464,7 +464,8 @@ def detach(flow: Flow, args: argparse.Namespace, argv: list[str]) -> int:
     with out:
         proc = subprocess.Popen(child, stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                                 creationflags=flags, close_fds=True, env=env)
-    _job_update(flow, job_id, state="started", pid=proc.pid, argv=rest, log=str(log))
+    # The start time goes with every pid written, so a later process given the same id is not read as this job.
+    _job_update(flow, job_id, state="started", pid=proc.pid, created=process_created(proc.pid), argv=rest, log=str(log))
     emit(args, {"job": job_id, "log": str(log)}, f"{job_id}: started; `upe job {job_id}` for its state, log in {log}")
     return 0
 
