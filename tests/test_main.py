@@ -193,6 +193,14 @@ class MainTests(unittest.TestCase):
             self.assertEqual(self.main("--json", "editor", "run", "dash", "A.B.C", "--no-quit", "--", "-x")[0], 0)
         self.assertEqual(seen, [("A.B.C", ["-x"], True), ("A.B.C", ["-x"], False)])
 
+    def test_no_quit_after_the_dashes_is_refused(self):
+        # After `--` it would go to Unity as an Editor argument, and -quit would still be passed.
+        with mock.patch.object(cli.Flow, "editor_run") as editor_run:
+            code, _, err = self.main("--json", "editor", "run", "dash", "A.B.C", "--", "-x", "--no-quit")
+        self.assertEqual(code, 2)
+        self.assertIn("before `--`", json.loads(err)["error"])
+        editor_run.assert_not_called()
+
     def test_a_detached_editor_run_keeps_no_quit(self):
         self.state().mkdir(parents=True)
         launched = []

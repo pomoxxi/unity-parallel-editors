@@ -43,7 +43,7 @@ from .merge import CANDIDATE_PREFIX, LOCK_FILE, MANIFEST, MergeError, Merger, Me
 from . import identity as identities
 from . import judge as judging
 from .unity_cli import UnityCli, find_cli
-from .workspace import BRANCH_PREFIX, Workspaces, WorkspaceError, lock_state
+from .workspace import BRANCH_PREFIX, Workspaces, WorkspaceError, clear_stale_lock, lock_state
 from .safegit import PATHSPEC_VARIABLES, SAFE_GIT, pathspec_free_env  # noqa: F401 (PATHSPEC_VARIABLES: still named here)
 from .cmdline import ARGV_CAP, capped as _capped  # noqa: F401 (moved; `upe.flow` still names both)
 
@@ -2412,20 +2412,23 @@ class Flow:
 
     def editor_run(self, task_id: str, method: str, args: Sequence[str] = (), graphics: bool = False,
                    quit: bool = True) -> dict:
-        """Run one static Editor method in a batch Editor in the task's slot, then quit. `graphics` keeps a GPU device.
-        `quit=False` leaves `-quit` off, for a method that enters Play mode and ends the Editor itself with
-        EditorApplication.Exit: with `-quit`, Unity quits as soon as the method returns, before Play starts."""
+        """Run one static Editor method in a batch Editor in the task's slot. `graphics` keeps a GPU device.
+        By default `-quit` makes Unity quit when the method returns. `quit=False` leaves it off, for a method that
+        enters Play mode and ends the Editor itself with EditorApplication.Exit: with `-quit`, Play never starts.
+        Either way, a run past BATCH_TIMEOUT_S is ended with every process it started, and its lock cleared."""
         path = self._slot(task_id)
         log = path / "Logs" / f"upe-run-{method.rsplit('.', 1)[-1]}.log"
         before = self._dirt(path)
         try:
             run = self.editor.batch(path, log, "-executeMethod", method, *args, quit=quit, graphics=graphics,
                                     timeout=BATCH_TIMEOUT_S)
-            exit_code, timed_out = run.exit_code, False
-        except subprocess.TimeoutExpired:  # `subprocess.run` has killed the Editor by now
-            exit_code, timed_out = None, True
+            exit_code, timed_out, cleared = run.exit_code, False, False
+        except subprocess.TimeoutExpired:  # the Editor and its children are ended by now (`run_tree`)
+            # A killed Editor leaves Temp/UnityLockfile behind; the next Editor in the slot would find it.
+            exit_code, timed_out, cleared = None, True, clear_stale_lock(path)
         return {"task": task_id, "method": method, "quit": quit, "exit_code": exit_code, "timed_out": timed_out,
-                "time_limit_s": BATCH_TIMEOUT_S, "log": str(log), **self._after_editor(task_id, path, before)}
+                "time_limit_s": BATCH_TIMEOUT_S, "cleared_stale_lock": cleared, "log": str(log),
+                **self._after_editor(task_id, path, before)}
 
     def _dirt(self, path: Path) -> tuple[set[str], set[str]]:
         """Tracked files with changed content, and untracked files, in a slot."""

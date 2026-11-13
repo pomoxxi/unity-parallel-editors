@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import os
 import re
+import signal
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
@@ -19,12 +21,98 @@ from .workspace import lock_state
 
 Runner = Callable[..., subprocess.CompletedProcess]
 
-# How long a batch Editor may run. A run past it is killed: `subprocess.run` ends the process before it raises.
+# How long a batch Editor may run. A run past it is ended with every process it started (`run_tree`).
 BATCH_TIMEOUT_S = 3600.0
 
 
 class EditorError(Exception):
     pass
+
+
+# Shared by every Editor of the user, and left running by a normal quit too: a tree kill spares it.
+SHARED_PROCESSES = frozenset({"unity.licensing.client.exe"})
+KILL_WAIT_S = 60.0  # how long a killed Editor gets to be gone before the timeout is raised anyway
+
+
+def tree(root: int, table: Sequence[tuple[int, int, str]], created: Callable[[int], int | None]) -> list[int]:
+    """`root` and every process it started, root first, from a table of (pid, parent pid, exe name). A process
+    older than the parent it names is not its child: Windows gave a dead parent's id to a new process."""
+    found = [root]
+    added = True
+    while added:
+        added = False
+        for pid, parent, name in table:
+            if pid in found or parent not in found or name.lower() in SHARED_PROCESSES:
+                continue
+            born, parent_born = created(pid), created(parent)
+            if born is not None and parent_born is not None and born < parent_born:
+                continue
+            found.append(pid)
+            added = True
+    return found
+
+
+def _process_table() -> list[tuple[int, int, str]]:
+    """Every process now: (pid, parent pid, exe name). Empty off Windows or when the snapshot fails."""
+    if sys.platform != "win32":
+        return []
+    import ctypes
+    from ctypes import wintypes
+
+    class Entry(ctypes.Structure):  # PROCESSENTRY32W
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("th32ProcessID", wintypes.DWORD),
+                    ("th32DefaultHeapID", ctypes.c_size_t), ("th32ModuleID", wintypes.DWORD),
+                    ("cntThreads", wintypes.DWORD), ("th32ParentProcessID", wintypes.DWORD),
+                    ("pcPriClassBase", ctypes.c_long), ("dwFlags", wintypes.DWORD), ("szExeFile", ctypes.c_wchar * 260)]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
+    snapshot = kernel32.CreateToolhelp32Snapshot(0x2, 0)  # TH32CS_SNAPPROCESS
+    if not snapshot or snapshot == ctypes.c_void_p(-1).value:
+        return []
+    table = []
+    try:
+        entry = Entry()
+        entry.dwSize = ctypes.sizeof(Entry)
+        more = kernel32.Process32FirstW(ctypes.c_void_p(snapshot), ctypes.byref(entry))
+        while more:
+            table.append((entry.th32ProcessID, entry.th32ParentProcessID, entry.szExeFile))
+            more = kernel32.Process32NextW(ctypes.c_void_p(snapshot), ctypes.byref(entry))
+    finally:
+        kernel32.CloseHandle(ctypes.c_void_p(snapshot))
+    return table
+
+
+def kill_tree(root: int) -> list[int]:
+    """End `root` and every process it started (asset import workers, the shader compiler, the package manager),
+    but the shared ones. Killing `root` alone leaves its children running: Windows does not end them with it.
+    Returns the ids it tried to end."""
+    from .flow import process_created  # flow imports this module
+
+    pids = tree(root, _process_table(), process_created)
+    for pid in pids:  # root first, so it starts no new child while the rest are ended
+        try:
+            os.kill(pid, signal.SIGTERM)  # TerminateProcess on Windows
+        except OSError:
+            pass  # already gone
+    return pids
+
+
+def run_tree(argv: Sequence[str], *, timeout: float | None = None, **kw) -> subprocess.CompletedProcess:
+    """`subprocess.run` for a batch Editor. Past `timeout`, the Editor and every process it started are ended,
+    the wait for them is bounded by KILL_WAIT_S, and TimeoutExpired is raised."""
+    proc = subprocess.Popen(argv, **kw)
+    try:
+        code = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        kill_tree(proc.pid)
+        proc.kill()  # if the walk could not see it
+        try:
+            proc.wait(timeout=KILL_WAIT_S)
+        except subprocess.TimeoutExpired:
+            pass
+        raise subprocess.TimeoutExpired(argv, timeout) from None
+    return subprocess.CompletedProcess(argv, code)
 
 
 def project_version(project: Path) -> str:
@@ -57,7 +145,7 @@ class EditorRun:
 
 
 class Editor:
-    def __init__(self, exe: Path | str, runner: Runner = subprocess.run, job_workers: int | None = 4):
+    def __init__(self, exe: Path | str, runner: Runner = run_tree, job_workers: int | None = 4):
         self.exe = Path(exe)
         self._runner = runner
         self.job_workers = job_workers  # caps threads per Editor when several run at once
@@ -84,7 +172,9 @@ class Editor:
         argv += list(args)
         if quit:
             argv.append("-quit")
-        completed = self._runner(argv, capture_output=True, text=True, errors="replace", timeout=timeout)
+        # No output pipes: Unity writes to -logFile, and a pipe a child of the Editor keeps open would hold the wait.
+        completed = self._runner(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 timeout=timeout)
         return EditorRun(tuple(argv), completed.returncode, log)
 
     def execute_method(

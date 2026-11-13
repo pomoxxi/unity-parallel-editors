@@ -86,14 +86,14 @@ def parser() -> argparse.ArgumentParser:
     etest = esub.add_parser("test", help="EditMode tests in the slot (its Editor must be closed)")
     etest.add_argument("task_id")
     etest.add_argument("--filter", help="only tests whose names match")
-    erun = esub.add_parser("run", help="run one static Editor method in a batch Editor, then quit")
+    erun = esub.add_parser("run", help="run one static Editor method in a batch Editor (it quits when the method returns, unless --no-quit)")
     erun.add_argument("task_id")
     erun.add_argument("method", help="Namespace.Class.Method")
     erun.add_argument("args", nargs="*", help="extra command-line arguments for the Editor")
     erun.add_argument("--graphics", action="store_true", help="keep a GPU device (loading scenes with terrain needs one)")
     erun.add_argument("--no-quit", action="store_true",
                       help="leave -quit off, for a method that enters Play mode and calls EditorApplication.Exit itself; "
-                           "the run is still killed after the batch time limit")
+                           "give it before `--`. A run past 3600 s is ended with every process it started")
 
     activity = sub.add_parser("activity", help="say what a session is doing, for the priority judge")
     activity.add_argument("session", help="the task id")
@@ -285,6 +285,8 @@ def run(flow: Flow, args: argparse.Namespace) -> int:
         elif args.action == "test":
             result = flow.editor_test(args.task_id, args.filter)
         else:
+            if "--no-quit" in args.args:  # after `--` it would reach Unity, and -quit would still be passed
+                raise FlowError("give --no-quit before `--`: after it, it goes to Unity and -quit is still passed")
             result = flow.editor_run(args.task_id, args.method, args.args, args.graphics, quit=not args.no_quit)
         emit(args, result, json.dumps(result, indent=2))
         if args.action == "test":

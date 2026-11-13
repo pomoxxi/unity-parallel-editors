@@ -2916,6 +2916,22 @@ class EditorCommandTests(FlowCase):
         self.assertEqual(result["time_limit_s"], BATCH_TIMEOUT_S)
         self.assertIs(result["quit"], False)
 
+    def test_a_run_past_its_time_limit_leaves_no_stale_lock(self):
+        # The killed Editor cannot remove its Temp/UnityLockfile; the next Editor in the slot would find it.
+        flow = self.flow()
+        flow.start("dash", "Add a dash.", ["Assets/Features/Dash/"])
+        wt = flow.workspaces.workspace("dash").path
+
+        def killed_with_its_lock(argv, **kw):
+            write(wt, "Temp/UnityLockfile", "")
+            raise subprocess.TimeoutExpired(argv, kw.get("timeout"))
+
+        flow.editor._runner = killed_with_its_lock
+        result = flow.editor_run("dash", "A.B.C", quit=False)
+        self.assertIs(result["timed_out"], True)
+        self.assertIs(result["cleared_stale_lock"], True)
+        self.assertFalse((wt / "Temp").exists())
+
 
 class CandidateBranchTests(FlowCase):
     def test_a_tag_named_like_the_candidate_branch_does_not_stop_the_land(self):
