@@ -16,7 +16,8 @@ from upe.flow import Outcome
 class MainTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        tmp = Path(self._tmp.name)
+        # Resolved, as Config.load resolves the paths it reads: %TEMP% may be an 8.3 short path.
+        self.tmp = tmp = Path(self._tmp.name).resolve()
         self.config = tmp / "tool" / "upe.toml"
         self.config.parent.mkdir()
         self.config.write_text(f'repo = "{(tmp / "game").as_posix()}"\nroot = "{(tmp / "work").as_posix()}"\n'
@@ -36,7 +37,7 @@ class MainTests(unittest.TestCase):
         self.assertEqual((code, json.loads(out)), (0, {"tasks": []}))
 
     def test_status_of_one_task(self):
-        tasks = Path(self._tmp.name) / "work" / ".upe" / "tasks"
+        tasks = self.tmp / "work" / ".upe" / "tasks"
         tasks.mkdir(parents=True)
         (tasks / "dash.json").write_text(json.dumps({"task_id": "dash", "brief": "b", "claim": ["Assets/A/"], "base": "x", "target": "t",
                                                      "state": "conflict", "history": ["first", "second"]}))
@@ -50,7 +51,7 @@ class MainTests(unittest.TestCase):
         # because `start` claims first and writes the record only once the slot is made.
         from upe.claims import ClaimRegistry
 
-        state = Path(self._tmp.name) / "work" / ".upe"
+        state = self.tmp / "work" / ".upe"
         state.mkdir(parents=True)
         ClaimRegistry(state / "claims.json").claim("quiet", ["Assets/A.unity"])
         code, out, _ = self.main("--json", "status", "quiet")
@@ -59,7 +60,7 @@ class MainTests(unittest.TestCase):
         self.assertEqual([(t["task"], t["state"]) for t in json.loads(out)["tasks"]], [("quiet", "starting")])
 
     def test_status_lists_a_broken_record_and_shows_times(self):
-        tasks = Path(self._tmp.name) / "work" / ".upe" / "tasks"
+        tasks = self.tmp / "work" / ".upe" / "tasks"
         tasks.mkdir(parents=True)
         (tasks / "dash.json").write_text(json.dumps({"task_id": "dash", "brief": "b", "claim": [], "base": "x", "target": "t",
                                                      "state": "working", "history": ["old", "new"], "stamps": ["2026-11-07T10:00:00+00:00"]}))
@@ -70,7 +71,7 @@ class MainTests(unittest.TestCase):
         self.assertIn("\nold\n2026-11-07T10:00:00+00:00 new", out)  # the entry from before times were kept has none
 
     def record(self, task_id="dash", **fields):
-        tasks = Path(self._tmp.name) / "work" / ".upe" / "tasks"
+        tasks = self.tmp / "work" / ".upe" / "tasks"
         tasks.mkdir(parents=True, exist_ok=True)
         data = {"task_id": task_id, "brief": "b", "claim": [], "base": "x", "target": "t", "state": "working",
                 "history": ["old", "new"], **fields}
@@ -97,7 +98,7 @@ class MainTests(unittest.TestCase):
                 self.assertIn("its record does not read", json.loads(err)["error"])
 
     def test_status_of_a_broken_record_is_an_error_not_a_traceback(self):
-        tasks = Path(self._tmp.name) / "work" / ".upe" / "tasks"
+        tasks = self.tmp / "work" / ".upe" / "tasks"
         tasks.mkdir(parents=True)
         (tasks / "bad.json").write_text("{not json")
         code, out, err = self.main("status", "bad")
@@ -109,7 +110,7 @@ class MainTests(unittest.TestCase):
         from upe.claims import ClaimError, file_lock
 
         self.record()
-        claims = Path(self._tmp.name) / "work" / ".upe" / "claims.json"
+        claims = self.tmp / "work" / ".upe" / "claims.json"
         claims.write_text("{not json")
         code, out, _ = self.main("--json", "status", "dash")
         self.assertEqual((code, json.loads(out)["state"]), (0, "working"))
@@ -121,7 +122,7 @@ class MainTests(unittest.TestCase):
         from upe.claims import ClaimError, file_lock
 
         self.record()
-        claims = Path(self._tmp.name) / "work" / ".upe" / "claims.json"
+        claims = self.tmp / "work" / ".upe" / "claims.json"
         claims.write_text("{not json")
         code, out, _ = self.main("--json", "status")
         answer = json.loads(out)
@@ -142,7 +143,7 @@ class MainTests(unittest.TestCase):
         from upe.claims import ClaimRegistry
         from upe.flow import Flow
 
-        state = Path(self._tmp.name) / "work" / ".upe"
+        state = self.tmp / "work" / ".upe"
         state.mkdir(parents=True)
         ClaimRegistry(state / "claims.json").claim("quiet", ["Assets/A.unity"])
         reads = []
@@ -171,7 +172,7 @@ class MainTests(unittest.TestCase):
         self.assertIn("error", json.loads(err))
 
     def test_asking_about_a_job_does_not_change_it(self):
-        jobs = Path(self._tmp.name) / "work" / ".upe" / "jobs"
+        jobs = self.tmp / "work" / ".upe" / "jobs"
         jobs.mkdir(parents=True)
         (jobs / "land-dash-20261028T120000.json").write_text(json.dumps({"job": "x", "state": "running", "log": "nope"}))
         code, out, _ = self.main("--json", "job", "land-dash-20261028T120000")
@@ -181,7 +182,7 @@ class MainTests(unittest.TestCase):
         self.assertNotIn("exit_code", record)
 
     def test_a_verdict_file_with_a_bom_is_read(self):
-        verdict = Path(self._tmp.name) / "v.json"
+        verdict = self.tmp / "v.json"
         verdict.write_bytes(b"\xef\xbb\xbf" + b'{"commit": "x", "verdict": "GO"}')
         answer = Outcome("dash", "awaiting-council", "recorded")
         with mock.patch.object(cli.Flow, "verdict", return_value=answer) as recorded:
@@ -192,7 +193,7 @@ class MainTests(unittest.TestCase):
     def test_job_wait_returns_when_the_job_is_done(self):
         import threading
 
-        jobs = Path(self._tmp.name) / "work" / ".upe" / "jobs"
+        jobs = self.tmp / "work" / ".upe" / "jobs"
         jobs.mkdir(parents=True)
         path = jobs / "land-dash-20261028T120000.json"
         path.write_text(json.dumps({"job": "x", "state": "running", "log": "nope"}))
@@ -203,7 +204,7 @@ class MainTests(unittest.TestCase):
         self.assertEqual(code, 0)
 
     def test_a_job_whose_process_is_gone_is_done(self):
-        jobs = Path(self._tmp.name) / "work" / ".upe" / "jobs"
+        jobs = self.tmp / "work" / ".upe" / "jobs"
         jobs.mkdir(parents=True)
         gone = subprocess.Popen([sys.executable, "-c", ""])
         gone.wait()
@@ -221,7 +222,7 @@ class MainTests(unittest.TestCase):
         self.assertEqual(cli._job_read(flow, "land-dash-20261028T120000")["state"], "done")
 
     def test_a_running_job_stays_running(self):
-        jobs = Path(self._tmp.name) / "work" / ".upe" / "jobs"
+        jobs = self.tmp / "work" / ".upe" / "jobs"
         jobs.mkdir(parents=True)
         path = jobs / "land-dash-20261028T120000.json"
         path.write_text(json.dumps({"job": "x", "state": "running", "pid": os.getpid(), "log": "nope"}))
@@ -233,7 +234,7 @@ class MainTests(unittest.TestCase):
     JOB = "land-dash-20261101T120000"  # made long ago (see flow.JOB_START_GRACE_S)
 
     def state(self):
-        return Path(self._tmp.name) / "work" / ".upe"
+        return self.tmp / "work" / ".upe"
 
     def dead_pid(self):
         gone = subprocess.Popen([sys.executable, "-c", ""])
@@ -459,7 +460,7 @@ class MainTests(unittest.TestCase):
     def test_finish_clears_a_dead_start_from_the_command_line(self):
         from upe.claims import ClaimRegistry
 
-        game = Path(self._tmp.name) / "game"
+        game = self.tmp / "game"
         game.mkdir()
         for argv in (("init", "-q", "-b", "main"), ("-c", "user.email=t@e", "-c", "user.name=t", "commit", "-q",
                                                      "--allow-empty", "-m", "init")):
@@ -628,7 +629,7 @@ class MainTests(unittest.TestCase):
         from upe.flow import Task
         from upe.workspace import Workspace
 
-        slot = Path(self._tmp.name) / "slot"
+        slot = self.tmp / "slot"
         task = Task("dash", "b", ["Assets/A/"], "x", "main")
         with mock.patch.object(cli.Flow, "start", return_value=task), \
                 mock.patch("upe.workspace.Workspaces.workspace", return_value=Workspace("dash", slot, "upe/dash")):
@@ -651,7 +652,7 @@ class MainTests(unittest.TestCase):
         # printed (with the folder filled in) on real git. Red with the command taken out of the skill.
         from test_trial_gaps import run_printed  # a real POSIX shell (Git Bash's sh), so `$` and a backtick count
 
-        game = Path(self._tmp.name) / "game"
+        game = self.tmp / "game"
         (game / "Assets" / "Features" / "Dash").mkdir(parents=True)
         (game / "Assets" / "Features" / "Dash" / "Dash.cs").write_text("class Dash {}\n")
         (game / "Assets" / "Features" / "Dash" / "Ünï.cs").write_text("class U {}\n")  # a non-ASCII name, printed as it is
@@ -662,7 +663,7 @@ class MainTests(unittest.TestCase):
             subprocess.run(["git", "-C", str(game), *args], check=True, capture_output=True)
         self.config.write_text(self.config.read_text(encoding="utf-8") + 'target = "upe/t$x`y"\n',
                                encoding="utf-8")
-        skills = Path(self._tmp.name) / "skills"
+        skills = self.tmp / "skills"
         code, _, err = self.main("skill", "--to", str(skills))
         self.assertEqual(code, 0, err)
         text = (skills / "upe" / "SKILL.md").read_text(encoding="utf-8")
@@ -691,7 +692,7 @@ class MainTests(unittest.TestCase):
         env = {k: v for k, v in os.environ.items() if k not in ("PYTHONIOENCODING", "PYTHONUTF8")}
         env["PYTHONPATH"] = str(Path(upe.__file__).resolve().parents[1])
         done = subprocess.run([sys.executable, "-m", "upe", "--config", str(self.config), "status", "dash"],
-                              capture_output=True, env=env, stdin=subprocess.DEVNULL, cwd=self._tmp.name)
+                              capture_output=True, env=env, stdin=subprocess.DEVNULL, cwd=self.tmp)
         self.assertEqual(done.returncode, 0, done.stderr.decode("utf-8", "replace"))
         self.assertIn(name, done.stdout.decode("utf-8"))
 
@@ -709,7 +710,7 @@ class MainTests(unittest.TestCase):
         self.assertTrue(stage.startswith("land dash: x"))
 
     def test_a_config_inside_the_game_is_refused(self):
-        inside = Path(self._tmp.name) / "game" / "upe.toml"
+        inside = self.tmp / "game" / "upe.toml"
         inside.parent.mkdir()
         inside.write_text(self.config.read_text(encoding="utf-8"), encoding="utf-8")
         self.config = inside
