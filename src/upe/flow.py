@@ -417,8 +417,10 @@ def _entry_times(task: "Task") -> list[datetime | None]:
     return [None] * missing + [_stamp_time(s) for s in stamps]
 
 
-def process_alive(pid: int) -> bool:
-    """Whether a process with this id runs. A dead one's id may be reused, which reads as alive."""
+def process_alive(pid: int, created: int | None = None) -> bool:
+    """Whether a process with this id runs. Windows gives a dead process's id to new ones, so with `created` (from
+    `process_created`, written with the pid) a live process that started at another time is not it. Without
+    `created` (a record written before it was kept, or off Windows) a reused id reads as alive."""
     if sys.platform != "win32":
         try:
             os.kill(pid, 0)
@@ -436,9 +438,39 @@ def process_alive(pid: int) -> bool:
         return False
     code = ctypes.c_ulong()
     try:
-        return bool(kernel32.GetExitCodeProcess(ctypes.c_void_p(handle), ctypes.byref(code))) and code.value == 259  # STILL_ACTIVE
+        if not (kernel32.GetExitCodeProcess(ctypes.c_void_p(handle), ctypes.byref(code)) and code.value == 259):  # STILL_ACTIVE
+            return False
+        return not isinstance(created, int) or _created_of(kernel32, handle) in (None, created)
     finally:
         kernel32.CloseHandle(ctypes.c_void_p(handle))
+
+
+def process_created(pid: int) -> int | None:
+    """When the process `pid` started (a Windows FILETIME, 100 ns since 1601), or None off Windows or
+    when it cannot be read. A job record keeps it beside the pid, so `process_alive` can tell a reused id."""
+    if sys.platform != "win32":
+        return None
+    import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return None
+    try:
+        return _created_of(kernel32, handle)
+    finally:
+        kernel32.CloseHandle(ctypes.c_void_p(handle))
+
+
+def _created_of(kernel32, handle) -> int | None:
+    import ctypes
+
+    created, exited, kernel, user = (ctypes.c_ulonglong() for _ in range(4))
+    if not kernel32.GetProcessTimes(ctypes.c_void_p(handle), ctypes.byref(created), ctypes.byref(exited),
+                                    ctypes.byref(kernel), ctypes.byref(user)):
+        return None  # unreadable: the pid alone decides, as before
+    return created.value
 
 
 class FlowError(Exception):
@@ -701,7 +733,7 @@ class Flow:
         """The job's record; one whose process is gone without saying how it ended counts as done, with exit 3."""
         record = self.job_read(job_id)
         pid = record.get("pid")
-        if record.get("state") == "done" or not isinstance(pid, int) or not pid or process_alive(pid):
+        if record.get("state") == "done" or not isinstance(pid, int) or not pid or process_alive(pid, record.get("created")):
             return record
         record = self.job_read(job_id)  # it may have finished between the two looks
         if record.get("state") == "done":
@@ -744,7 +776,7 @@ class Flow:
             record = self._job_or_none(job_id)
             pid = record.get("pid") if record else None
             if (record and record.get("state") in ("started", "running") and isinstance(pid, int) and pid
-                    and process_alive(pid)):
+                    and process_alive(pid, record.get("created"))):
                 found.append({**record, "job": job_id})
         return found
 
