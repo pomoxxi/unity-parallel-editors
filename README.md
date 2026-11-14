@@ -66,6 +66,7 @@ upe --json job <job id> --wait
 upe --json verdict dash --member "<model>" --file verdict.json
 
 upe decide dash land         # the user, at a terminal, only after a split council
+upe withdraw dash            # give up a pending land; the task keeps its slot, branch and claim
 upe finish dash              # park the slot for the next task
 upe status [<task>]
 upe judge --watch            # shares the CPU among the Editors

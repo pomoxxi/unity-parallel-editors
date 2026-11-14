@@ -522,6 +522,19 @@ class MainTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("older version of the tool", json.loads(err)["error"])
 
+    def test_withdraw_exits_0_on_working_and_2_on_a_refusal(self):
+        # `working` is what `withdraw` does, unlike a land that ends there.
+        from upe import flow as flowmod
+
+        withdrawn = flowmod.Outcome("dash", "working", "land withdrawn (awaiting-council)")
+        with mock.patch.object(cli, "lower_own_priority"):
+            with mock.patch.object(flowmod.Flow, "withdraw", return_value=withdrawn):
+                code, out, _ = self.main("--json", "withdraw", "dash")
+            self.assertEqual((code, json.loads(out)["state"]), (0, "working"))
+            with mock.patch.object(flowmod.Flow, "withdraw", side_effect=flowmod.FlowError("nothing to withdraw")):
+                code, _, err = self.main("--json", "withdraw", "dash")
+        self.assertEqual((code, json.loads(err)["error"]), (2, "nothing to withdraw"))
+
     def test_a_start_job_beginning_shows_as_starting(self):
         # `start --detach` before its child claims: never "no task" alone.
         from datetime import datetime, timezone
