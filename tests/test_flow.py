@@ -3534,7 +3534,7 @@ class NextStepTests(FlowCase):
         self.assertEqual(step, flowmod.next_step("dash", "awaiting-council"))
 
     def test_a_command_holding_the_lock_on_any_state_says_wait(self):
-        # A land in its first seconds, before "land started", or a `verdict`, `decide` or `finish`.
+        # A land in its first seconds, before "land started", or a `verdict`, `decide`, `withdraw` or `finish`.
         from upe import flow as flowmod
 
         flow = self.flow()
@@ -4954,12 +4954,27 @@ class WithdrawTests(FlowCase):
 
         flow = self.flow()
         slot = self.started(flow)
-        flow._save(flow.task("dash"), "working", flowmod.land_started_note())  # a land killed after its entry
-        self.assertEqual(flow.situation(flow.task("dash"))[0], "landing")
-        outcome = flow.withdraw("dash")
-        self.assertIn("ended without a result", outcome.message)
-        self.assertEqual(flow.situation(flow.task("dash"))[0], "working")
-        self.assert_kept(flow, slot)
+        # A land killed after its first entry, and one killed after the retry's entry.
+        for entry in (flowmod.land_started_note(), flowmod.LAND_AGAIN[len("working: "):]):
+            with self.subTest(entry=entry):
+                flow._save(flow.task("dash"), "working", entry)
+                self.assertEqual(flow.situation(flow.task("dash"))[0], "landing")
+                outcome = flow.withdraw("dash")
+                self.assertIn("ended without a result", outcome.message)
+                self.assertEqual(flow.situation(flow.task("dash"))[0], "working")
+                self.assert_kept(flow, slot)
+
+    def test_a_withdrawn_task_finishes_and_frees_its_claim(self):
+        flow = self.flow()
+        self.started(flow)
+        self.assertEqual(Flow.land(flow, "dash").state, "awaiting-council")
+        flow.withdraw("dash")
+        with self.assertRaises(FlowError) as again:  # nothing is pending now: the refusal gives the withdrawn step
+            flow.withdraw("dash")
+        self.assertIn(next_step("dash", "working", withdrawn=True), str(again.exception))
+        self.assertEqual(flow.finish("dash").state, "finished")
+        self.assertEqual(flow.registry.all(), {})
+        self.assertIn("upe/dash", git(self.repo, "branch"))  # it did not land, so its branch is kept
 
     def test_nothing_is_withdrawn_where_no_land_is_pending_or_the_call_is_the_users(self):
         flow = self.flow()
@@ -4998,6 +5013,10 @@ class WithdrawTests(FlowCase):
         self.assertEqual(outcome.state, "working")
         self.assertIn("not parked yet: open in an Editor", outcome.message)
         self.assertEqual(flow.task("dash").state, "working")
+        # Once that Editor has ended, withdraw again parks the slot the first one could not.
+        self.assertIsNotNone(flow.candidate_path("dash"))
+        self.assertIn("a slot its land still held", flow.withdraw("dash").message)
+        self.assertIsNone(flow.candidate_path("dash"))
 
 
 if __name__ == "__main__":

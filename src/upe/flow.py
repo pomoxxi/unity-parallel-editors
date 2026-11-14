@@ -153,7 +153,7 @@ BASELINE_WAIT_SLACK_S = 900  # what `_test_baseline` waits past `test_timeout_s`
 # A guard only: the lock is per slot, a slot has one owner, so no land waits on it, and the wait is
 # not in the land's bound.
 SCENE_WAIT_S = 3600 + BASELINE_WAIT_SLACK_S
-BUSY_TELL_AFTER = "an hour"  # a `verdict`, `decide` or `finish` holds the lock for minutes
+BUSY_TELL_AFTER = "an hour"  # a `verdict`, `decide`, `withdraw` or `finish` holds the lock for minutes
 # A `start` holds the task's lock from before its claim to its end, so the lock says whether it runs.
 # Past this, counted from its claim's `since`, a start that still runs is told to the user. A judgment: the Library
 # copy has no cap of its own, and the Unity CLI call of `install` has 600 s; a start takes minutes.
@@ -170,13 +170,14 @@ LOCK_TRY_GAP_S = 0.05
 LAND_STARTED = "working: land started"
 LAND_AGAIN = "working: target moved; landing again"  # the retry's entry, between two "land started"
 _LAND_JOB = re.compile(r"^working: land started \(job ([A-Za-z0-9-]+)\)")
-# The entry `withdraw` writes. Pinned: `situation_of` reads it back for `next`. It is not a land entry, so a task
-# whose last entry it is reads as `working`, not `landing`.
+# The entry `withdraw` writes, pinned: `_withdraw` writes it with `land_withdrawn_note`, `situation_of` reads it back
+# for `next`. It is not a land entry, so a task whose last entry it is reads as `working`, not `landing`.
 LAND_WITHDRAWN = "working: land withdrawn"
 # The states in which a land is pending, so `withdraw` takes it back: its merge waits on the council, or stopped on
 # its checks or on a conflict with its candidate kept. Also a `working` task whose last entry is a land's (a land that
-# ended without a result; one that runs holds the lock). Not `awaiting-user` (the user's call) and not `refused` (its
-# candidate is already gone, and its votes are the council's findings).
+# ended without a result; one that runs holds the lock), or that still holds a slot of a land (a withdraw that could
+# not park it, so running it again does). Not `awaiting-user` (the user's call) and not `refused` (its candidate is
+# already gone, and its votes are the council's findings).
 WITHDRAWABLE = ("awaiting-council", "checks-failed", "conflict")
 
 
@@ -191,6 +192,11 @@ STEP_PATHS = 25
 def land_started_note(job_id: str = "") -> str:
     """The note of the "land started" entry; with the land's job id when it runs as a job."""
     return f"land started{f' (job {job_id})' if job_id else ''}; any earlier merge and its votes no longer count"
+
+
+def land_withdrawn_note(was: str) -> str:
+    """The note of the entry `withdraw` writes; `was` says what it withdrew. With the state, it reads LAND_WITHDRAWN."""
+    return f"land withdrawn ({was}); its merge and any votes on it no longer count"
 
 
 def is_land_entry(entry: str) -> bool:
@@ -211,7 +217,8 @@ def next_step(task_id: str, state: str, land: Land | None = None, *, target: str
               moved_to: str = "", voted: bool = False, withdrawn: bool = False) -> str:
     """What an agent picking up `task_id` does next, in `state` (one of STATES, or `starting`, `unreadable`,
     `landing`). `land` says whether a land runs, for `landing`, and for any other state whether a command
-    works on the task now (`running` true: a `land` in its first seconds, a `verdict`, `decide` or `finish`);
+    works on the task now (`running` true: a `land` in its first seconds, a `verdict`, `decide`, `withdraw` or
+    `finish`);
     `target` names the target, for `conflict`. For `starting`, `land` is what is known of the `start` (see
     `Flow.start_facts`); `left-behind` is a slot or branch of the task with no claim and no record.
     `outside_branch`, for `checks-failed`: the land's entry says no finding is in a path the branch
@@ -722,7 +729,8 @@ class Flow:
                          what=f"task {task_id} (another upe command is working on it)")
 
     def task_lock_held(self, task_id: str) -> bool | None:
-        """Whether a `land`, `verdict`, `decide` or `finish` holds the task's lock now; None if it cannot be tried.
+        """Whether a `land`, `verdict`, `decide`, `withdraw` or `finish` holds the task's lock now; None if it cannot
+        be tried.
 
         Tried without waiting on the holder, and with no file made: a missing lock file is one no process holds.
         A probe holds a free lock for an instant, so two `status` probes at once may each read the other's as
@@ -865,7 +873,7 @@ class Flow:
             land = Land(running=True, **self._job_facts(entry_job, self._job_or_none(entry_job) if entry_job else None))
             if entry_job and land.job_state not in ("started", "running"):
                 # The lock's holder is not the land of the entry, whose job is over: a land not yet at its entry,
-                # or a `verdict`, `decide` or `finish`. Its start and its log are not known.
+                # or a `verdict`, `decide`, `withdraw` or `finish`. Its start and its log are not known.
                 land.log = ""
                 return self._bounded(land, None)
             if entry_job:  # the job's land holds the lock: its newest try started at the newer of these
@@ -2393,26 +2401,30 @@ class Flow:
         if task.state == "awaiting-user":
             raise FlowError(f"task {task_id} waits for the user's decision on a split council, which is the user's "
                             f"call, so its land was not withdrawn: tell the user")
-        ended = task.state == "working" and bool(task.history) and is_land_entry(task.history[-1])
-        if task.state not in WITHDRAWABLE and not ended:
+        last = task.history[-1] if task.history else ""
+        ended = task.state == "working" and is_land_entry(last)
+        held = task.state == "working" and any(self.workspaces.path_of(owner + task_id) is not None
+                                               for owner in (CANDIDATE_OWNER, BASE_OWNER))
+        if task.state not in WITHDRAWABLE and not ended and not held:
             raise FlowError(f"task {task_id} is {task.state}, with no land pending, so there is nothing to withdraw. "
-                            f"{next_step(task_id, task.state)}")
+                            f"{next_step(task_id, task.state, withdrawn=last.startswith(LAND_WITHDRAWN))}")
         # A `land --detach` not yet at the lock would take it once this ends, and its land would undo the withdraw.
         starting = self._starting_jobs(task_id)
         if starting:
             job = starting[0]["job"]
             raise FlowError(f"a land of {task_id} is starting (job {job}), so nothing was withdrawn: wait on it with "
                             f"`upe job {job} --wait`, then withdraw it if `upe status {task_id}` still shows it pending")
-        was = "a land that ended without a result" if ended else task.state
+        was = ("a land that ended without a result" if ended else "a slot its land still held" if held
+               else task.state)
         # The entry first, as a land's "land started" is: from it on the merge and its votes are void, however the
         # rest ends. Then what a new land clears as it starts; the run's merge and check records stay.
-        self._save(task, "working", f"land withdrawn ({was}); its merge and any votes on it no longer count")
+        self._save(task, "working", land_withdrawn_note(was))
         self.ballot(task_id).clear()
         for name in ("council-brief.md", "council.md", "lander.json"):
             (self.run_dir(task_id) / name).unlink(missing_ok=True)
         message = f"land withdrawn ({was}); the slot, the branch and the claim are kept"
         try:
-            self._discard_candidate(task_id, f"the next `upe land {task_id}` or `upe finish {task_id}` parks it")
+            self._discard_candidate(task_id, f"run `upe withdraw {task_id}` again")
         except (WorkspaceError, FlowError) as exc:
             message += f"; its merge candidate is not parked yet: {exc}"
         return Outcome(task_id, "working", message)

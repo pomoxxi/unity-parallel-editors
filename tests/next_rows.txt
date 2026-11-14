@@ -164,7 +164,7 @@
   status: {"state": "landing", "running": true, "job": "land-dash-20261101T115930", "job_state": "started", "since": "2026-11-01T11:59:30+00:00", "over_limit": false, "log": "<state>/jobs/land-dash-20261101T115930.log"}
   next: A land is running (job land-dash-20261101T115930): commit nothing; wait on it with `upe job land-dash-20261101T115930 --wait`, then ask `upe status dash` again. If it runs over 9 h 10 min, since 2026-11-01T11:59:30+00:00, tell the user; its log is <state>/jobs/land-dash-20261101T115930.log
 
-## row 16: a land in its first seconds, before "land started" (or a `verdict`, `decide`, `finish`)
+## row 16: a land in its first seconds, before "land started" (or a `verdict`, `decide`, `withdraw`, `finish`)
   record: checks-failed; entries: "working: started in its slot" (7200 s ago); "checks-failed: 2 findings" (600 s ago)
   lock: held
   status: {"state": "checks-failed", "running": true, "job": null, "job_state": null}
