@@ -30,7 +30,7 @@ from .workspace import TASK_ID, WorkspaceError
 
 ERRORS = (FlowError, ClaimError, WorkspaceError, MergeError, AgentPackageError, EditorError, UnityCliError, JudgeError,
           CouncilError, SetupError)
-HEAVY_COMMANDS = ("start", "land", "verdict", "decide", "finish", "golden", "editor")  # copy Libraries, run Editors
+HEAVY_COMMANDS = ("start", "land", "verdict", "decide", "withdraw", "finish", "golden", "editor")  # copy Libraries, run Editors
 TOOL_HOME = Path(__file__).resolve().parents[2]  # this repo, where upe.toml lives
 CLAIMS_WAIT = 5.0  # seconds `status` waits for the claims' lock; a change holds it for well under one
 WAIT_POLL_S = 5.0  # `job --wait` reads the job's record this often
@@ -55,7 +55,9 @@ def parser() -> argparse.ArgumentParser:
     start.add_argument("--claim", action="append", required=True, help="a path, folder/ or glob; repeat for more")
     start.add_argument("--base", help="start from this ref instead of the target")
 
-    for name, text in (("land", "merge, check, write the council brief"), ("finish", "park the task's slot")):
+    for name, text in (("land", "merge, check, write the council brief"),
+                       ("withdraw", "give up a pending land; the task keeps its slot, branch and claim"),
+                       ("finish", "park the task's slot")):
         sub.add_parser(name, help=text).add_argument("task_id")
 
     verdict = sub.add_parser("verdict", help="a council member's GO or NO-GO, as JSON (see the council brief)")
@@ -189,6 +191,8 @@ def run(flow: Flow, args: argparse.Namespace) -> int:
                  "in a terminal, and type the task id when asked", stream=sys.stderr)
             return 2
         return outcome(args, flow.decide(args.task_id, args.choice))
+    elif args.command == "withdraw":
+        outcome(args, flow.withdraw(args.task_id))  # `working` is what it does, so exit 0, not `outcome`'s 1
     elif args.command == "status" and args.task_id:
         if not flow.has_record(args.task_id):  # only then read the claims: a task being started has none yet
             claim = flow.starting(CLAIMS_WAIT).get(args.task_id)

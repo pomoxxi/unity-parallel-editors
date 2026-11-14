@@ -74,6 +74,7 @@ class Row:
     claimed: int = 0  # for `start`: when the claim was made, seconds before the clock
     moved: str = ""  # the target's tip, when it moved since the merge under review (`Flow.moved_since`)
     voted: bool = False  # with `moved`: a vote is already recorded on that merge (`Flow._has_votes`)
+    unparked: bool = False  # a slot of its land is still held (`Flow.land_slot_held`)
 
 
 def _job(state: str, *, exit_code: int | None = None, pid: int = DEAD, error: str = "") -> dict:
@@ -91,6 +92,14 @@ ROWS = [
     Row("1 b", "the same, with a vote already recorded on the old merge", "awaiting-council",
         [(STARTED, 7200), (land_started(A), 3600), ("awaiting-council: checks passed; ask two members", 60)],
         {A: _job("done", exit_code=0)}, moved="9f3c2e1d4b5a" + "0" * 28, voted=True),
+    Row("1 c", "exit 0, `awaiting-council`, then the land withdrawn with `upe withdraw`", "working",
+        [(STARTED, 7200), (land_started(A), 3600), ("awaiting-council: checks passed; ask two members", 600),
+         ("working: " + flowmod.land_withdrawn_note("awaiting-council"), 60)],
+        {A: _job("done", exit_code=0)}),
+    Row("1 d", "the same, and an Editor still had the merge candidate's slot, so it was not parked", "working",
+        [(STARTED, 7200), (land_started(A), 3600), ("awaiting-council: checks passed; ask two members", 600),
+         ("working: " + flowmod.land_withdrawn_note("awaiting-council"), 60)],
+        {A: _job("done", exit_code=0)}, unparked=True),
     Row("2", "exit 1, `conflict`", "conflict",
         [(STARTED, 7200), (land_started(A), 3600), ("conflict: Assets/Scenes/Arena.unity", 60)],
         {A: _job("done", exit_code=1)}),
@@ -132,7 +141,7 @@ ROWS = [
         {A: _job("running", pid=LIVE)}, lock=True),
     Row("15", "a new `land --detach` before its child takes the lock, after an older land ended", "working",
         [(STARTED, 7200), (land_started(A), 600)], {A: _job("done", exit_code=2), B: _job("started", pid=LIVE)}),
-    Row("16", "a land in its first seconds, before \"land started\" (or a `verdict`, `decide`, `finish`)",
+    Row("16", "a land in its first seconds, before \"land started\" (or a `verdict`, `decide`, `withdraw`, `finish`)",
         "checks-failed", [(STARTED, 7200), ("checks-failed: 2 findings", 600)], lock=True),
     Row("16 a", "the same, with its new job starting", "checks-failed",
         [(STARTED, 7200), ("checks-failed: 2 findings", 600)], {B: _job("started", pid=LIVE)}, lock=True),
@@ -242,7 +251,8 @@ def _shown(row: Row, root: Path) -> tuple[dict, str]:
             mock.patch.object(flowmod, "process_alive", lambda pid, created=None: pid == LIVE), \
             mock.patch.object(flow, "task_lock_held", lock), \
             mock.patch.object(flow, "_moved_under", lambda _task_id: row.moved), \
-            mock.patch.object(flow, "_has_votes", lambda _task_id: row.voted):
+            mock.patch.object(flow, "_has_votes", lambda _task_id: row.voted), \
+            mock.patch.object(flow, "land_slot_held", lambda _task_id: row.unparked):
         state, land, step = flow.situation(task)
     return {"state": state, **(land.to_json() if land else {})}, step
 
@@ -263,6 +273,8 @@ def _facts(row: Row) -> list[str]:
     if row.moved:
         lines.append(f"  target: moved since the merge, to {row.moved[:12]}"
                      + ("; a vote is recorded on that merge" if row.voted else ""))
+    if row.unparked:
+        lines.append("  slot: the merge candidate's slot is still held")
     for name, record in row.jobs.items():
         pid = "live pid" if record.get("pid") == LIVE else "dead pid"
         code = f", exit {record['exit_code']}" if "exit_code" in record else ""
