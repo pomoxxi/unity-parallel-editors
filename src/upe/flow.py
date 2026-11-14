@@ -269,9 +269,10 @@ def next_step(task_id: str, state: str, land: Land | None = None, *, target: str
                     f"a NO-GO found (tell the user if you think it is wrong), then land it again {again}")
         return f"{moved}: land it again now {again}"
     if state == "working" and withdrawn and unparked:
-        return (f"Its land was withdrawn, but the slot of its merge candidate is not parked yet (an Editor had it "
-                f"open): once that Editor has ended, run `upe withdraw {task_id}` again, which parks it (if it refuses, "
-                "do what its message says). The task keeps its slot, its branch and its claim")
+        return (f"Its land was withdrawn, but a slot of that land (its merge candidate, or its run of tests on the "
+                f"target) is not parked yet, most likely because an Editor had it open: once that Editor has ended, run "
+                f"`upe withdraw {task_id}` again, which parks it; if its answer says a slot is still not parked, do what "
+                "it says. The task keeps its slot, its branch and its claim")
     if state == "working" and withdrawn:
         return (f"Its land was withdrawn, and it keeps its slot, its branch and its claim. To land it through upe, work "
                 f"in its slot, commit, and land it again. If its work goes to the target another way (a pull request), "
@@ -2417,7 +2418,7 @@ class Flow:
         # Two cases of `working` with a land pending: a land that ended without a result (one that runs holds the
         # lock), and a slot of a land still held (a withdraw that could not park it, so running it again does).
         ended = task.state == "working" and is_land_entry(last)
-        # Read here without `land_slot_held`, which reads a slot map that does not read as no slot: this one raises.
+        # Not through `land_slot_held`, which takes a slot map it cannot read for no slot held; here that must raise.
         held = task.state == "working" and any(self.workspaces.path_of(owner + task_id) is not None
                                                for owner in (CANDIDATE_OWNER, BASE_OWNER))
         if task.state not in WITHDRAWABLE and not ended and not held:
@@ -2429,8 +2430,12 @@ class Flow:
             job = starting[0]["job"]
             raise FlowError(f"a land of {task_id} is starting (job {job}), so nothing was withdrawn: wait on it with "
                             f"`upe job {job} --wait`, then withdraw it if `upe status {task_id}` still shows it pending")
-        was = ("a land that ended without a result" if ended else "its merge candidate's slot, not parked before"
-               if held else task.state)
+        if ended:
+            was = "a land that ended without a result"
+        elif held:
+            was = "a slot of its land, not parked before"
+        else:
+            was = task.state
         # The entry first, as a land's "land started" is: from it on the merge and its votes are void, however the
         # rest ends. Then what a new land clears as it starts; the run's merge and check records stay.
         self._save(task, "working", land_withdrawn_note(was))

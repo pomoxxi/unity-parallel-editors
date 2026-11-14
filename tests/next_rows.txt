@@ -40,7 +40,7 @@
   slot: the merge candidate's slot is still held
   job land-dash-20261101T110000: record says done, exit 0, dead pid
   status: {"state": "working"}
-  next: Its land was withdrawn, but the slot of its merge candidate is not parked yet (an Editor had it open): once that Editor has ended, run `upe withdraw dash` again, which parks it (if it refuses, do what its message says). The task keeps its slot, its branch and its claim
+  next: Its land was withdrawn, but a slot of that land (its merge candidate, or its run of tests on the target) is not parked yet, most likely because an Editor had it open: once that Editor has ended, run `upe withdraw dash` again, which parks it; if its answer says a slot is still not parked, do what it says. The task keeps its slot, its branch and its claim
 
 ## row 2: exit 1, `conflict`
   record: conflict; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago); "conflict: Assets/Scenes/Arena.unity" (60 s ago)
