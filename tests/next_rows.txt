@@ -27,6 +27,21 @@
   status: {"state": "awaiting-council"}
   next: main moved since this merge (it is at 9f3c2e1d4b5a now), so no vote can land it, and landing again clears the votes already recorded on it. First read them, in `verdicts/` in its run folder (`upe status dash` names it): fix in its slot and commit what a NO-GO found (tell the user if you think it is wrong), then land it again (`upe land dash`, with --detach), which makes a new merge with its own checks and council brief. Tell the user that the council on the old merge can stop
 
+## row 1 c: exit 0, `awaiting-council`, then the land withdrawn with `upe withdraw`
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago); "awaiting-council: checks passed; ask two members" (600 s ago); "working: land withdrawn (awaiting-council); its merge and any votes on it no longer count" (60 s ago)
+  lock: free
+  job land-dash-20261101T110000: record says done, exit 0, dead pid
+  status: {"state": "working"}
+  next: Its land was withdrawn, and it keeps its slot, its branch and its claim. To land it through upe, work in its slot, commit, and land it again. If its work goes to the target another way (a pull request), run `upe finish dash` once that has merged, which frees its slot and its claim
+
+## row 1 d: the same, and an Editor still had the merge candidate's slot, so it was not parked
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago); "awaiting-council: checks passed; ask two members" (600 s ago); "working: land withdrawn (awaiting-council); its merge and any votes on it no longer count" (60 s ago)
+  lock: free
+  slot: the merge candidate's slot is still held
+  job land-dash-20261101T110000: record says done, exit 0, dead pid
+  status: {"state": "working"}
+  next: Its land was withdrawn, but a slot of that land (its merge candidate, or its run of tests on the target) is not parked yet, most likely because an Editor had it open: once that Editor has ended, run `upe withdraw dash` again, which parks it; if its answer says a slot is still not parked, do what it says. The task keeps its slot, its branch and its claim
+
 ## row 2: exit 1, `conflict`
   record: conflict; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago); "conflict: Assets/Scenes/Arena.unity" (60 s ago)
   lock: free
@@ -157,11 +172,11 @@
   status: {"state": "landing", "running": true, "job": "land-dash-20261101T115930", "job_state": "started", "since": "2026-11-01T11:59:30+00:00", "over_limit": false, "log": "<state>/jobs/land-dash-20261101T115930.log"}
   next: A land is running (job land-dash-20261101T115930): commit nothing; wait on it with `upe job land-dash-20261101T115930 --wait`, then ask `upe status dash` again. If it runs over 9 h 10 min, since 2026-11-01T11:59:30+00:00, tell the user; its log is <state>/jobs/land-dash-20261101T115930.log
 
-## row 16: a land in its first seconds, before "land started" (or a `verdict`, `decide`, `finish`)
+## row 16: a land in its first seconds, before "land started" (or a `verdict`, `decide`, `withdraw`, `finish`)
   record: checks-failed; entries: "working: started in its slot" (7200 s ago); "checks-failed: 2 findings" (600 s ago)
   lock: held
   status: {"state": "checks-failed", "running": true, "job": null, "job_state": null}
-  next: A upe command works on dash now (a land in its first seconds, or a `verdict`, `decide` or `finish`): commit nothing, and ask `upe status dash` again in a few minutes. The tool does not know when it started: if it says the same for over an hour after you first asked, tell the user
+  next: A upe command works on dash now (a land in its first seconds, or a `verdict`, `decide`, `withdraw` or `finish`): commit nothing, and ask `upe status dash` again in a few minutes. The tool does not know when it started: if it says the same for over an hour after you first asked, tell the user
 
 ## row 16 a: the same, with its new job starting
   record: checks-failed; entries: "working: started in its slot" (7200 s ago); "checks-failed: 2 findings" (600 s ago)
