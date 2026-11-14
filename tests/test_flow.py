@@ -3294,6 +3294,8 @@ class NextStepTests(FlowCase):
         for state in (*flowmod.STATES, "starting", "unreadable"):
             steps[state] = flowmod.next_step("dash", state)
         steps["working, its land withdrawn"] = flowmod.next_step("dash", "working", withdrawn=True)
+        steps["working, its land withdrawn, a slot not parked"] = flowmod.next_step("dash", "working", withdrawn=True,
+                                                                                    unparked=True)
         steps["a command works on it"] = flowmod.next_step("dash", "conflict", flowmod.Land(running=True))
         steps["could not tell if a command works on it"] = flowmod.next_step("dash", "conflict", flowmod.Land(running=None))
         for i, land in enumerate(lands):
@@ -5013,10 +5015,15 @@ class WithdrawTests(FlowCase):
         self.assertEqual(outcome.state, "working")
         self.assertIn("not parked yet: open in an Editor", outcome.message)
         self.assertEqual(flow.task("dash").state, "working")
-        # Once that Editor has ended, withdraw again parks the slot the first one could not.
+        # `status` says so too, for an agent that did not keep the answer.
         self.assertIsNotNone(flow.candidate_path("dash"))
-        self.assertIn("a slot its land still held", flow.withdraw("dash").message)
+        step = flow.situation(flow.task("dash"))[2]
+        self.assertEqual(step, next_step("dash", "working", withdrawn=True, unparked=True))
+        self.assertIn("upe withdraw dash", step)
+        # Once that Editor has ended, withdraw again parks the slot the first one could not.
+        self.assertIn("not parked before", flow.withdraw("dash").message)
         self.assertIsNone(flow.candidate_path("dash"))
+        self.assertEqual(flow.situation(flow.task("dash"))[2], next_step("dash", "working", withdrawn=True))
 
 
 if __name__ == "__main__":

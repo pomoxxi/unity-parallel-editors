@@ -34,6 +34,14 @@
   status: {"state": "working"}
   next: Its land was withdrawn, and it keeps its slot, its branch and its claim. To land it through upe, work in its slot, commit, and land it again. If its work goes to the target another way (a pull request), run `upe finish dash` once that has merged, which frees its slot and its claim
 
+## row 1 d: the same, and an Editor still had the merge candidate's slot, so it was not parked
+  record: working; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago); "awaiting-council: checks passed; ask two members" (600 s ago); "working: land withdrawn (awaiting-council); its merge and any votes on it no longer count" (60 s ago)
+  lock: free
+  slot: the merge candidate's slot is still held
+  job land-dash-20261101T110000: record says done, exit 0, dead pid
+  status: {"state": "working"}
+  next: Its land was withdrawn, but the slot of its merge candidate is not parked yet (an Editor had it open): once that Editor has ended, run `upe withdraw dash` again, which parks it (if it refuses, do what its message says). The task keeps its slot, its branch and its claim
+
 ## row 2: exit 1, `conflict`
   record: conflict; entries: "working: started in its slot" (7200 s ago); "working: land started (job land-dash-20261101T110000); any earlier merge and its votes no longer count" (3600 s ago); "conflict: Assets/Scenes/Arena.unity" (60 s ago)
   lock: free

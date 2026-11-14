@@ -4,7 +4,7 @@
     land    merge onto a candidate, regenerate and replay, check, write the council brief
     verdict a council member's GO or NO-GO; the second one lands, refuses or asks the user
     decide  the user's call on a split council
-    withdraw  give up a pending land: the task goes back to working, with its slot, branch and claim
+    withdraw give up a pending land: the task goes back to working, with its slot, branch and claim
     finish  remove a task's worktree (and its branch, once landed)
 
 State lives next to the worktrees, in `<root>/.upe/`: the claims registry,
@@ -174,10 +174,8 @@ _LAND_JOB = re.compile(r"^working: land started \(job ([A-Za-z0-9-]+)\)")
 # for `next`. It is not a land entry, so a task whose last entry it is reads as `working`, not `landing`.
 LAND_WITHDRAWN = "working: land withdrawn"
 # The states in which a land is pending, so `withdraw` takes it back: its merge waits on the council, or stopped on
-# its checks or on a conflict with its candidate kept. Also a `working` task whose last entry is a land's (a land that
-# ended without a result; one that runs holds the lock), or that still holds a slot of a land (a withdraw that could
-# not park it, so running it again does). Not `awaiting-user` (the user's call) and not `refused` (its candidate is
-# already gone, and its votes are the council's findings).
+# its checks or on a conflict with its candidate kept (two cases of `working` are in `_withdraw`). Not `awaiting-user`
+# (the user's call) and not `refused` (its candidate is already gone, and its votes are the council's findings).
 WITHDRAWABLE = ("awaiting-council", "checks-failed", "conflict")
 
 
@@ -214,7 +212,7 @@ def land_job(history: Sequence[str]) -> str:
 
 
 def next_step(task_id: str, state: str, land: Land | None = None, *, target: str = "", outside_branch: bool = False,
-              moved_to: str = "", voted: bool = False, withdrawn: bool = False) -> str:
+              moved_to: str = "", voted: bool = False, withdrawn: bool = False, unparked: bool = False) -> str:
     """What an agent picking up `task_id` does next, in `state` (one of STATES, or `starting`, `unreadable`,
     `landing`). `land` says whether a land runs, for `landing`, and for any other state whether a command
     works on the task now (`running` true: a `land` in its first seconds, a `verdict`, `decide`, `withdraw` or
@@ -225,7 +223,8 @@ def next_step(task_id: str, state: str, land: Land | None = None, *, target: str
     changed (NOT_IN_BRANCH), so the step says to tell the user, not to fix. `moved_to`, for `awaiting-council`: the
     target's tip, when the target moved since the merge under review so that merge can no longer land (`moved_since`);
     `voted`, with it: a vote is already recorded on that merge (`Flow._has_votes`). `withdrawn`, for `working`: its last
-    entry is the one `withdraw` writes (LAND_WITHDRAWN)."""
+    entry is the one `withdraw` writes (LAND_WITHDRAWN); `unparked`, with it: a slot of its land is still held, which
+    that withdraw could not park (`Flow.land_slot_held`)."""
     if state == "landing":
         return _landing_step(task_id, land or Land(running=None))
     if state == "starting":
@@ -269,6 +268,10 @@ def next_step(task_id: str, state: str, land: Land | None = None, *, target: str
                     f"`verdicts/` in its run folder (`upe status {task_id}` names it): fix in its slot and commit what "
                     f"a NO-GO found (tell the user if you think it is wrong), then land it again {again}")
         return f"{moved}: land it again now {again}"
+    if state == "working" and withdrawn and unparked:
+        return (f"Its land was withdrawn, but the slot of its merge candidate is not parked yet (an Editor had it "
+                f"open): once that Editor has ended, run `upe withdraw {task_id}` again, which parks it (if it refuses, "
+                "do what its message says). The task keeps its slot, its branch and its claim")
     if state == "working" and withdrawn:
         return (f"Its land was withdrawn, and it keeps its slot, its branch and its claim. To land it through upe, work "
                 f"in its slot, commit, and land it again. If its work goes to the target another way (a pull request), "
@@ -980,12 +983,21 @@ class Flow:
             state = "landing"
         outside = state == "checks-failed" and bool(task.history) and task.history[-1].endswith(NOT_IN_BRANCH)
         withdrawn = state == "working" and bool(task.history) and task.history[-1].startswith(LAND_WITHDRAWN)
+        unparked = withdrawn and land is None and self.land_slot_held(task.task_id)
         moved = (self._moved_under(task.task_id)
                  if state == "awaiting-council" and (land is None or land.running is False) else "")
         return Situation(task, state, land, next_step(task.task_id, state, land, target=task.target,
                                                       outside_branch=outside, moved_to=moved,
                                                       voted=bool(moved) and self._has_votes(task.task_id),
-                                                      withdrawn=withdrawn))
+                                                      withdrawn=withdrawn, unparked=unparked))
+
+    def land_slot_held(self, task_id: str) -> bool:
+        """Whether a slot of the task's land (its merge candidate, or its run of tests on the target) is still held;
+        False when the slot map does not read, since this only changes the words of `next`."""
+        try:
+            return any(self.workspaces.path_of(owner + task_id) is not None for owner in (CANDIDATE_OWNER, BASE_OWNER))
+        except (WorkspaceError, OSError, ValueError):
+            return False
 
     def _has_votes(self, task_id: str) -> bool:
         """Whether a vote is recorded on the task's merge: any file in its ballot, read or not, so a vote that does
@@ -2402,7 +2414,10 @@ class Flow:
             raise FlowError(f"task {task_id} waits for the user's decision on a split council, which is the user's "
                             f"call, so its land was not withdrawn: tell the user")
         last = task.history[-1] if task.history else ""
+        # Two cases of `working` with a land pending: a land that ended without a result (one that runs holds the
+        # lock), and a slot of a land still held (a withdraw that could not park it, so running it again does).
         ended = task.state == "working" and is_land_entry(last)
+        # Read here without `land_slot_held`, which reads a slot map that does not read as no slot: this one raises.
         held = task.state == "working" and any(self.workspaces.path_of(owner + task_id) is not None
                                                for owner in (CANDIDATE_OWNER, BASE_OWNER))
         if task.state not in WITHDRAWABLE and not ended and not held:
@@ -2414,8 +2429,8 @@ class Flow:
             job = starting[0]["job"]
             raise FlowError(f"a land of {task_id} is starting (job {job}), so nothing was withdrawn: wait on it with "
                             f"`upe job {job} --wait`, then withdraw it if `upe status {task_id}` still shows it pending")
-        was = ("a land that ended without a result" if ended else "a slot its land still held" if held
-               else task.state)
+        was = ("a land that ended without a result" if ended else "its merge candidate's slot, not parked before"
+               if held else task.state)
         # The entry first, as a land's "land started" is: from it on the merge and its votes are void, however the
         # rest ends. Then what a new land clears as it starts; the run's merge and check records stay.
         self._save(task, "working", land_withdrawn_note(was))
