@@ -122,7 +122,18 @@ def main(argv: list[str] | None = None) -> int:
     utf8_output()
     if "--json" in argv[1:]:  # agents put it after the subcommand too; it means the same there
         argv = ["--json", *(a for a in argv if a != "--json")]
-    args = parser().parse_args(argv)
+    # Before Python 3.12, argparse fills `editor run`'s `*` positional before the options that follow it,
+    # so `run T M --no-quit -- -x` left -x unclaimed and failed. What follows `--` is kept out of the parse;
+    # argv stays whole, for a --detach job that runs the same command again.
+    at = argv.index("--") if "--" in argv else len(argv)
+    passed = argv[at + 1:]
+    args = parser().parse_args(argv[:at])
+    if passed:
+        if not isinstance(getattr(args, "args", None), list):
+            emit(args, {"error": "only `editor run` takes arguments after `--`"},
+                 "upe: only `editor run` takes arguments after `--`", stream=sys.stderr)
+            return 2
+        args.args += passed
     args.config = args.config or default_config()
     if args.command == "setup":
         return setup(args)

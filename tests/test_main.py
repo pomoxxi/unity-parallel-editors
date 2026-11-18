@@ -214,6 +214,23 @@ class MainTests(unittest.TestCase):
         self.assertIn("--no-quit", launched[0])
         self.assertNotIn("--detach", launched[0])
 
+    def test_a_detached_editor_run_keeps_the_editor_arguments(self):
+        self.state().mkdir(parents=True)
+        launched = []
+
+        def popen(argv, **kwargs):
+            launched.append(argv)
+            return mock.Mock(pid=os.getpid())
+
+        with mock.patch.object(cli.subprocess, "Popen", popen), mock.patch.object(cli, "agent_process", lambda: {}):
+            self.main("--json", "--detach", "editor", "run", "dash", "A.B.C", "--no-quit", "--", "-x")
+        self.assertEqual(launched[0][-4:], ["A.B.C", "--no-quit", "--", "-x"])
+
+    def test_dashes_are_refused_where_nothing_takes_them(self):
+        code, _, err = self.main("--json", "status", "--", "dash")
+        self.assertEqual(code, 2)
+        self.assertIn("only `editor run`", err)
+
     def test_a_verdict_file_with_a_bom_is_read(self):
         verdict = self.tmp / "v.json"
         verdict.write_bytes(b"\xef\xbb\xbf" + b'{"commit": "x", "verdict": "GO"}')
