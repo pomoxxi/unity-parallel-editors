@@ -88,11 +88,14 @@ def parser() -> argparse.ArgumentParser:
     etest = esub.add_parser("test", help="EditMode tests in the slot (its Editor must be closed)")
     etest.add_argument("task_id")
     etest.add_argument("--filter", help="only tests whose names match")
-    erun = esub.add_parser("run", help="run one static Editor method in a batch Editor, then quit")
+    erun = esub.add_parser("run", help="run one static Editor method in a batch Editor (it quits when the method returns, unless --no-quit)")
     erun.add_argument("task_id")
     erun.add_argument("method", help="Namespace.Class.Method")
     erun.add_argument("args", nargs="*", help="extra command-line arguments for the Editor")
     erun.add_argument("--graphics", action="store_true", help="keep a GPU device (loading scenes with terrain needs one)")
+    erun.add_argument("--no-quit", action="store_true",
+                      help="leave -quit off, for a method that enters Play mode and calls EditorApplication.Exit itself; "
+                           "give it before `--`. A run past 3600 s is ended with every process it started")
 
     activity = sub.add_parser("activity", help="say what a session is doing, for the priority judge")
     activity.add_argument("session", help="the task id")
@@ -119,7 +122,18 @@ def main(argv: list[str] | None = None) -> int:
     utf8_output()
     if "--json" in argv[1:]:  # agents put it after the subcommand too; it means the same there
         argv = ["--json", *(a for a in argv if a != "--json")]
-    args = parser().parse_args(argv)
+    # Python 3.11, which CI runs, fills `editor run`'s `*` positional before the options that follow it (3.14
+    # does not), so `run T M --no-quit -- -x` left -x unclaimed and failed. What follows `--` is kept out of the
+    # parse; argv stays whole, for a --detach job that runs the same command again.
+    at = argv.index("--") if "--" in argv else len(argv)
+    passed = argv[at + 1:]
+    args = parser().parse_args(argv[:at])
+    if passed:
+        if not isinstance(getattr(args, "args", None), list):
+            emit(args, {"error": "only `editor run` takes arguments after `--`"},
+                 "upe: only `editor run` takes arguments after `--`", stream=sys.stderr)
+            return 2
+        args.args += passed
     args.config = args.config or default_config()
     if args.command == "setup":
         return setup(args)
@@ -286,7 +300,9 @@ def run(flow: Flow, args: argparse.Namespace) -> int:
         elif args.action == "test":
             result = flow.editor_test(args.task_id, args.filter)
         else:
-            result = flow.editor_run(args.task_id, args.method, args.args, args.graphics)
+            if "--no-quit" in args.args:  # after `--` it would reach Unity, and -quit would still be passed
+                raise FlowError("give --no-quit before `--`: after it, it goes to Unity and -quit is still passed")
+            result = flow.editor_run(args.task_id, args.method, args.args, args.graphics, quit=not args.no_quit)
         emit(args, result, json.dumps(result, indent=2))
         if args.action == "test":
             return 0 if result["finished"] and not result["failed"] and result["tests"] else 1

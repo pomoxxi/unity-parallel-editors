@@ -1,11 +1,15 @@
 import json
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from upe.checks import scene_checks, scene_problems
-from upe.editor import Editor, EditorError, compile_errors, find_editor, project_version, yaml_merge_for
+from upe.editor import Editor, EditorError, compile_errors, find_editor, project_version, run_tree, tree, yaml_merge_for
+from upe.flow import process_alive
 from upe.workspace import LOCKFILE
 
 
@@ -19,10 +23,10 @@ def project(root: Path) -> Path:
 
 class Recorder:
     def __init__(self, code=0, side_effect=None):
-        self.code, self.side_effect, self.argv = code, side_effect, None
+        self.code, self.side_effect, self.argv, self.kw = code, side_effect, None, None
 
     def __call__(self, argv, **kw):
-        self.argv = argv
+        self.argv, self.kw = argv, kw
         if self.side_effect:
             self.side_effect(argv)
         return subprocess.CompletedProcess(argv, self.code, "", "")
@@ -63,6 +67,50 @@ class EditorTests(unittest.TestCase):
         Editor("U.exe", runner=rec, job_workers=None).execute_method(self.p, "A.B.C", self.p / "l.log", ["-x", "1"])
         self.assertEqual(rec.argv[-4:], ["-executeMethod", "A.B.C", "-x", "1"])
         self.assertNotIn("-quit", rec.argv)
+
+    def test_a_batch_editor_gets_no_output_pipes(self):
+        # Unity writes to -logFile. A pipe that a child of the Editor keeps open would hold the wait after a kill.
+        rec = Recorder()
+        Editor("U.exe", runner=rec).execute_method(self.p, "A.B.C", self.p / "l.log")
+        self.assertNotIn("capture_output", rec.kw)
+        self.assertEqual([rec.kw.get(k) for k in ("stdin", "stdout", "stderr")], [subprocess.DEVNULL] * 3)
+
+    def test_the_tree_is_the_editor_and_what_it_started(self):
+        table = [(10, 1, "Unity.exe"), (11, 10, "Unity.exe"), (12, 11, "UnityShaderCompiler.exe"),
+                 (13, 10, "Unity.Licensing.Client.exe"), (14, 13, "conhost.exe"), (20, 1, "Other.exe"),
+                 (15, 11, "Old.exe")]  # 15 names 11 as parent, but is older than it: 11 is a reused id
+        created = {10: 100, 11: 110, 12: 120, 13: 130, 14: 140, 20: 50, 15: 90}
+        self.assertEqual(tree(10, table, created.get), [10, 11, 12])
+
+    @unittest.skipUnless(sys.platform == "win32", "the tree kill is Windows only")
+    def test_a_run_past_its_time_limit_ends_the_whole_tree(self):
+        pid_file = self.p / "child.pid"
+        script = ("import subprocess, sys, time\n"
+                  "c = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
+                  f"open(r'{pid_file}', 'w').write(str(c.pid))\n"
+                  "time.sleep(120)\n")
+        began = time.monotonic()
+        with self.assertRaises(subprocess.TimeoutExpired):
+            run_tree([sys.executable, "-c", script], timeout=3, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL)
+        child = int(pid_file.read_text())
+        try:
+            self.assertLess(time.monotonic() - began, 60)
+            deadline = time.monotonic() + 10
+            while process_alive(child) and time.monotonic() < deadline:
+                time.sleep(0.2)
+            self.assertFalse(process_alive(child), "the Editor's child outlived the kill")
+        finally:
+            subprocess.run(["taskkill", "/F", "/PID", str(child)], capture_output=True)
+
+    def test_an_interrupted_wait_ends_the_whole_tree(self):
+        proc = mock.Mock(pid=42)
+        proc.wait.side_effect = [KeyboardInterrupt(), 0]
+        with mock.patch("upe.editor.subprocess.Popen", return_value=proc), \
+                mock.patch("upe.editor.kill_tree") as kill_tree, self.assertRaises(KeyboardInterrupt):
+            run_tree(["U.exe"], timeout=60)
+        kill_tree.assert_called_once_with(42)
+        proc.kill.assert_called_once_with()
 
     def test_graphics_keeps_the_gpu_device(self):
         rec = Recorder()
