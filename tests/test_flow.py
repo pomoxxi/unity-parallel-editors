@@ -2512,6 +2512,42 @@ class MetaCheckTests(SceneCheckCase):
                          [f"- Assets/Art/Ref.mat [guid-ref] &2100000 refers to GUID {hidden}, which no asset has"])
         self.assertEqual(outcome.state, "checks-failed")
 
+    def test_a_dangling_guid_reference_the_target_already_held_does_not_stop_the_land(self):
+        # The check reads the whole changed file. Without the fix: the reference the target already held is a
+        # finding, and the land stops on a problem the branch did not bring.
+        old = "e" * 32
+        asset(self.repo, "Assets/Art/Ref.mat", MATERIAL + f"  m_Shader: {{fileID: 4800000, guid: {old}, type: 3}}\n")
+        commit(self.repo, "a material whose shader is gone")
+        flow = self.flow()
+        renamed = MATERIAL.replace("m_Name: Mat\n", "m_Name: Mat2\n")
+        self.assertNotEqual(renamed, MATERIAL, "control: the branch changes the material's text")
+        self.branch(flow, {"Assets/Art/Ref.mat": renamed
+                           + f"  m_Shader: {{fileID: 4800000, guid: {old}, type: 3}}\n"})
+
+        def opened(root):
+            return self.put(root, "Library/PackageCache/com.x/Pkg.mat.meta", file_meta("d" * 32))
+
+        outcome = self.land_with_disk(flow, opened)
+        self.assertEqual(self.meta_lines(flow, check="guid-ref"), [])
+        self.assertIn("1 dangling GUID reference was already in the same files on the target", self.checks_md(flow))
+        self.assertEqual(outcome.state, "awaiting-council", outcome.message)
+
+    def test_a_dangling_guid_reference_the_branch_adds_to_a_file_that_had_one_stops(self):
+        old, new = "e" * 32, "c" * 32
+        asset(self.repo, "Assets/Art/Ref.mat", MATERIAL + f"  m_Shader: {{fileID: 4800000, guid: {old}, type: 3}}\n")
+        commit(self.repo, "a material whose shader is gone")
+        flow = self.flow()
+        self.branch(flow, {"Assets/Art/Ref.mat": MATERIAL + f"  m_Shader: {{fileID: 4800000, guid: {old}, type: 3}}\n"
+                           + f"  m_Parent: {{fileID: 2100000, guid: {new}, type: 2}}\n"})
+
+        def opened(root):
+            return self.put(root, "Library/PackageCache/com.x/Pkg.mat.meta", file_meta("d" * 32))
+
+        outcome = self.land_with_disk(flow, opened)
+        self.assertEqual(self.meta_lines(flow, check="guid-ref"),
+                         [f"- Assets/Art/Ref.mat [guid-ref] &2100000 refers to GUID {new}, which no asset has"])
+        self.assertEqual(outcome.state, "checks-failed")
+
     def test_a_meta_read_that_fails_stops_the_land(self):
         # Real git: the blob of a tracked .meta is taken out of the object store for the
         # read only; `git grep` writes `error: ... unable to read` and still exits 0, since other .meta files match.
