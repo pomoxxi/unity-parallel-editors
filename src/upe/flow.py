@@ -2505,7 +2505,8 @@ class Flow:
         """Run one static Editor method in a batch Editor in the task's slot. `graphics` keeps a GPU device.
         By default `-quit` makes Unity quit when the method returns. `quit=False` leaves it off, for a method that
         enters Play mode and ends the Editor itself with EditorApplication.Exit: with `-quit`, Play never starts.
-        Either way, a run past BATCH_TIMEOUT_S is ended with every process it started, and its lock cleared."""
+        Either way, a run past BATCH_TIMEOUT_S is ended with every process it started, and its stale lock is
+        cleared if it can be: `cleared_stale_lock` in the answer says whether it was."""
         path = self._slot(task_id)
         log = path / "Logs" / f"upe-run-{method.rsplit('.', 1)[-1]}.log"
         before = self._dirt(path)

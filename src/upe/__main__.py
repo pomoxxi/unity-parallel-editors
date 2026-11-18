@@ -122,9 +122,9 @@ def main(argv: list[str] | None = None) -> int:
     utf8_output()
     if "--json" in argv[1:]:  # agents put it after the subcommand too; it means the same there
         argv = ["--json", *(a for a in argv if a != "--json")]
-    # Before Python 3.12, argparse fills `editor run`'s `*` positional before the options that follow it,
-    # so `run T M --no-quit -- -x` left -x unclaimed and failed. What follows `--` is kept out of the parse;
-    # argv stays whole, for a --detach job that runs the same command again.
+    # Python 3.11, which CI runs, fills `editor run`'s `*` positional before the options that follow it (3.14
+    # does not), so `run T M --no-quit -- -x` left -x unclaimed and failed. What follows `--` is kept out of the
+    # parse; argv stays whole, for a --detach job that runs the same command again.
     at = argv.index("--") if "--" in argv else len(argv)
     passed = argv[at + 1:]
     args = parser().parse_args(argv[:at])

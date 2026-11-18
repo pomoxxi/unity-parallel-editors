@@ -100,19 +100,27 @@ def kill_tree(root: int) -> list[int]:
 
 def run_tree(argv: Sequence[str], *, timeout: float | None = None, **kw) -> subprocess.CompletedProcess:
     """`subprocess.run` for a batch Editor. Past `timeout`, the Editor and every process it started are ended,
-    the wait for them is bounded by KILL_WAIT_S, and TimeoutExpired is raised."""
+    the wait for them is bounded by KILL_WAIT_S, and TimeoutExpired is raised. Any other exception in the wait
+    (Ctrl-C too) ends them the same way, as `subprocess.run` ended its child, so no Editor keeps the slot."""
     proc = subprocess.Popen(argv, **kw)
     try:
         code = proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
-        kill_tree(proc.pid)
-        proc.kill()  # if the walk could not see it
-        try:
-            proc.wait(timeout=KILL_WAIT_S)
-        except subprocess.TimeoutExpired:
-            pass
+        _end_tree(proc)
         raise subprocess.TimeoutExpired(argv, timeout) from None
+    except BaseException:
+        _end_tree(proc)
+        raise
     return subprocess.CompletedProcess(argv, code)
+
+
+def _end_tree(proc: subprocess.Popen) -> None:
+    kill_tree(proc.pid)
+    proc.kill()  # if the walk could not see it
+    try:
+        proc.wait(timeout=KILL_WAIT_S)
+    except subprocess.TimeoutExpired:
+        pass
 
 
 def project_version(project: Path) -> str:

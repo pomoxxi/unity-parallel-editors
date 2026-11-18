@@ -5,6 +5,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from upe.checks import scene_checks, scene_problems
 from upe.editor import Editor, EditorError, compile_errors, find_editor, project_version, run_tree, tree, yaml_merge_for
@@ -101,6 +102,15 @@ class EditorTests(unittest.TestCase):
             self.assertFalse(process_alive(child), "the Editor's child outlived the kill")
         finally:
             subprocess.run(["taskkill", "/F", "/PID", str(child)], capture_output=True)
+
+    def test_an_interrupted_wait_ends_the_whole_tree(self):
+        proc = mock.Mock(pid=42)
+        proc.wait.side_effect = [KeyboardInterrupt(), 0]
+        with mock.patch("upe.editor.subprocess.Popen", return_value=proc), \
+                mock.patch("upe.editor.kill_tree") as kill_tree, self.assertRaises(KeyboardInterrupt):
+            run_tree(["U.exe"], timeout=60)
+        kill_tree.assert_called_once_with(42)
+        proc.kill.assert_called_once_with()
 
     def test_graphics_keeps_the_gpu_device(self):
         rec = Recorder()
