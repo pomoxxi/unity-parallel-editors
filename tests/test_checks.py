@@ -84,6 +84,121 @@ class StaticChecks(ProjectCase):
         self.put("Assets/Scenes/Arena.unity", scene(go(1, "R", 2), tr(2, 1), renderer(3, 1, "f" * 32)))
         self.assertIn(("Assets/Scenes/Arena.unity", "guid-ref"), self.checks())
 
+    def guid_refs(self, target_text, target=None, changed=("Assets/Scenes/Arena.unity",)):
+        from upe.checks import disk_meta_tree
+
+        tree = disk_meta_tree(self.root)
+        report = static_checks(self.root, list(changed), tree=tree, target=target or tree, target_text=target_text)
+        return [f.message for f in report.findings if f.check == "guid-ref"], report.notes
+
+    def test_a_dangling_guid_the_file_held_on_the_target_is_not_a_finding(self):
+        old, new = "e" * 32, "f" * 32
+        on_target = scene(go(1, "R", 2), tr(2, 1), renderer(3, 1, old))
+        self.put("Assets/Scenes/Arena.unity", scene(go(1, "R", 2), tr(2, 1), renderer(3, 1, old), renderer(4, 1, new)))
+        found, notes = self.guid_refs(lambda path: on_target if path == "Assets/Scenes/Arena.unity" else None)
+        self.assertEqual(found, [f"&4 refers to GUID {new}, which no asset has"])
+        self.assertIn("1 dangling GUID reference was already in the same files on the target, so not counted as "
+                      "findings", notes)
+
+    def test_more_references_to_an_old_dangling_guid_than_the_target_held_are_findings(self):
+        # Without the count: the branch's two new references hide behind the target's one, with no finding.
+        old = "e" * 32
+        on_target = scene(go(1, "R", 2), tr(2, 1), renderer(3, 1, old))
+        self.put("Assets/Scenes/Arena.unity",
+                 scene(go(1, "R", 2), tr(2, 1), renderer(3, 1, old), renderer(4, 1, old), renderer(5, 1, old)))
+        found, notes = self.guid_refs(lambda path: on_target)
+        self.assertEqual(found, [f"&4 refers to GUID {old}, which no asset has",
+                                 f"&5 refers to GUID {old}, which no asset has"])
+        self.assertIn("1 dangling GUID reference was already in the same files on the target, so not counted as "
+                      "findings", notes)
+
+    def test_a_reference_to_an_asset_the_branch_deletes_is_a_finding(self):
+        # The target resolved the material; the branch deletes its .meta and re-saves the scene. Without the target's
+        # own tree: the reference dangles on the target too, measured against the merge, and is hidden.
+        from upe.checks import disk_meta_tree
+
+        target = disk_meta_tree(self.root)
+        on_target = (self.root / "Assets/Scenes/Arena.unity").read_text(encoding="utf-8")
+        (self.root / "Assets/Mat.mat.meta").unlink()
+        (self.root / "Assets/Mat.mat").unlink()
+        found, _ = self.guid_refs(lambda path: on_target, target=target)
+        self.assertEqual(found, [f"&5 refers to GUID {GUID_MAT}, which no asset has"])
+
+    def test_a_dangling_guid_in_a_file_the_target_lacks_is_a_finding(self):
+        old = "e" * 32
+        self.put("Assets/Scenes/Arena.unity", scene(go(1, "R", 2), tr(2, 1), renderer(3, 1, old)))
+        found, _ = self.guid_refs(lambda path: None)
+        self.assertEqual(found, [f"&3 refers to GUID {old}, which no asset has"])
+
+    def test_a_finding_names_the_object_that_holds_the_new_reference(self):
+        # Without matching the same object first: the target's &9 is spent on the branch's new &3, which comes first in
+        # the file, and the finding names &9, which the branch did not touch.
+        old = "e" * 32
+        on_target = scene(go(1, "R", 2), tr(2, 1), renderer(9, 1, old))
+        self.put("Assets/Scenes/Arena.unity", scene(go(1, "R", 2), tr(2, 1), renderer(3, 1, old), renderer(9, 1, old)))
+        found, _ = self.guid_refs(lambda path: on_target)
+        self.assertEqual(found, [f"&3 refers to GUID {old}, which no asset has"])
+
+    def test_an_old_reference_moved_to_another_object_is_not_a_finding(self):
+        old = "e" * 32
+        on_target = scene(go(1, "R", 2), tr(2, 1), renderer(9, 1, old))
+        self.put("Assets/Scenes/Arena.unity", scene(go(1, "R", 2), tr(2, 1), renderer(3, 1, old)))
+        found, _ = self.guid_refs(lambda path: on_target)
+        self.assertEqual(found, [])
+
+    def test_the_note_counts_two_old_references_in_the_plural(self):
+        old = "e" * 32
+        on_target = scene(go(1, "R", 2), tr(2, 1), renderer(3, 1, old), renderer(4, 1, old))
+        self.put("Assets/Scenes/Arena.unity", on_target)
+        _, notes = self.guid_refs(lambda path: on_target)
+        self.assertIn("2 dangling GUID references were already in the same files on the target, so not counted as "
+                      "findings", notes)
+
+    def test_the_note_counts_the_old_references_of_every_changed_file(self):
+        old = "e" * 32
+        on_target = scene(go(1, "R", 2), tr(2, 1), renderer(3, 1, old))
+        self.put("Assets/Scenes/Arena.unity", on_target)
+        self.put("Assets/Scenes/Other.unity", on_target)
+        self.put("Assets/Scenes/Other.unity.meta", f"guid: {'4' * 32}\n")
+        _, notes = self.guid_refs(lambda path: on_target,
+                                  changed=("Assets/Scenes/Arena.unity", "Assets/Scenes/Other.unity"))
+        self.assertIn("2 dangling GUID references were already in the same files on the target, so not counted as "
+                      "findings", notes)
+
+    def package_notes(self, changed):
+        old, other = "e" * 32, "d" * 32
+        on_target = scene(go(1, "R", 2), tr(2, 1), renderer(3, 1, old), renderer(4, 1, other), renderer(5, 1, old))
+        self.put("Assets/Scenes/Arena.unity", on_target)
+        _, notes = self.guid_refs(lambda path: on_target, changed=("Assets/Scenes/Arena.unity", *changed))
+        return [n for n in notes if n.startswith("the merge changes the packages")]
+
+    def test_a_merge_that_changes_the_manifest_names_the_old_guids_that_may_be_a_removed_package(self):
+        notes = self.package_notes(["Packages/manifest.json"])
+        self.assertEqual(len(notes), 1, notes)
+        self.assertTrue(notes[0].endswith(f"to these GUIDs: {'d' * 32}, {'e' * 32}"), notes)
+
+    def test_a_merge_that_changes_the_package_lock_file_names_the_old_guids_too(self):
+        self.assertEqual(len(self.package_notes(["Packages/packages-lock.json"])), 1)
+
+    def test_the_package_note_names_ten_guids_and_counts_the_rest(self):
+        olds = [f"{i:x}" * 16 for i in range(0xD0, 0xDC)]  # 12 GUIDs, d0d0... to dbdb..., none of an asset
+        on_target = scene(go(1, "R", 2), tr(2, 1), *(renderer(3 + i, 1, g) for i, g in enumerate(olds)))
+        self.put("Assets/Scenes/Arena.unity", on_target)
+        _, notes = self.guid_refs(lambda path: on_target,
+                                  changed=("Assets/Scenes/Arena.unity", "Packages/manifest.json"))
+        note = next(n for n in notes if n.startswith("the merge changes the packages"))
+        self.assertTrue(note.endswith(f"to these GUIDs: {', '.join(sorted(olds)[:10])}, and 2 more"), note)
+
+    def test_a_target_text_that_is_not_unity_yaml_has_no_old_references(self):
+        old = "e" * 32
+        self.put("Assets/Scenes/Arena.unity", scene(go(1, "R", 2), tr(2, 1), renderer(3, 1, old)))
+        lfs = "version https://git-lfs.github.com/spec/v1\noid sha256:" + "0" * 64 + "\nsize 12\n"
+        found, _ = self.guid_refs(lambda path: lfs)
+        self.assertEqual(found, [f"&3 refers to GUID {old}, which no asset has"])
+
+    def test_a_merge_that_leaves_the_packages_has_no_package_note(self):
+        self.assertEqual(self.package_notes(["Assets/Other.txt"]), [])
+
     def test_guid_check_skipped_without_package_cache(self):
         import shutil
 

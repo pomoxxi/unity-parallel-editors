@@ -1489,10 +1489,16 @@ class Flow:
 
         # The .meta check and the GUIDs a reference may name are read from the merge's commit through git,
         # not from the slot's disk, and the .meta findings are the merge's own: those the target's commit lacks.
+        # So are the dangling GUID references: one the same file already held on the target is not counted.
         merge_commit = self._git(candidate, "rev-parse", "HEAD").strip()
+
+        def target_text(path: str) -> str | None:
+            blob = self._blob(candidate, baseline["commit"], path)
+            return None if blob is None else blob.decode("utf-8", errors="replace")
+
         static = static_checks(candidate, changed=merged, package_cache=candidate / "Library" / "PackageCache",
                                tree=self._meta_tree(candidate, merge_commit),
-                               target=self._meta_tree(candidate, baseline["commit"]))
+                               target=self._meta_tree(candidate, baseline["commit"]), target_text=target_text)
         checks.findings += static.findings
         checks.notes += static.notes
         check_tool_namespace(candidate, merged, checks)

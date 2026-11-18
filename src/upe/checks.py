@@ -6,7 +6,8 @@ Static checks, run in Python on the merged worktree, no Unity needed:
 - no fileID appears twice in one file
 - every same-file `{fileID: n}` reference points at an object in the file
 - every `{guid: g}` reference points at an asset in the project or its
-  packages (built-in GUIDs are skipped)
+  packages (built-in GUIDs are skipped; on a land, one the same file
+  already held on the target is noted, not counted)
 - Transform parents and children agree (`m_Father` and `m_Children`)
 - every asset under Assets/ has a `.meta`, every `.meta` has its asset,
   and no GUID is used by two `.meta` files
@@ -24,6 +25,7 @@ import re
 import time
 import unicodedata
 import xml.etree.ElementTree as ET
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
@@ -273,16 +275,22 @@ def findings_outside_branch(findings: Iterable[Finding], paths: Iterable[str]) -
     return not any(_related(f.path, p) for f in findings for p in keys)
 
 
-def check_yaml_file(root: Path, path: Path, report: CheckReport, guids: set[str] | None) -> None:
+def check_yaml_file(root: Path, path: Path, report: CheckReport, guids: set[str] | None,
+                    on_target: "Callable[[], Counter[tuple[str, str]]] | None" = None) -> Counter[str]:
+    """Check one YAML file. `on_target()`: the dangling references this file held on the target, counted by (fileID of
+    the object that holds it, GUID). Those are not reported: first a reference the same object held, then, for an old
+    reference moved to another object, up to as many references to the GUID as the target held in all. Any more are.
+    Returns the GUIDs of the references it left out, counted."""
     rel = _rel(root, path)
     text = path.read_text(encoding="utf-8", errors="replace")
     if not text.startswith("%YAML"):
-        return  # binary-serialized or not Unity YAML; nothing to check here
+        return Counter()  # binary-serialized or not Unity YAML; nothing to check here
     try:
         docs = parse_unity_yaml(text)
     except ValueError as exc:
         report.add(rel, "yaml", str(exc))
-        return
+        return Counter()
+    dangling: list[tuple[str, str]] = []  # (fileID of the object that holds the reference, GUID), in file order
 
     ids: dict[str, int] = {}
     for d in docs:
@@ -299,8 +307,30 @@ def check_yaml_file(root: Path, path: Path, report: CheckReport, guids: set[str]
         if guids is not None:
             for match in _GUID_REF.finditer(d.body):
                 guid = match.group(2).lower()
-                if not guid.startswith(BUILTIN_GUID_PREFIX) and guid not in guids:
-                    report.add(rel, "guid-ref", f"&{d.file_id} refers to GUID {guid}, which no asset has")
+                if guid.startswith(BUILTIN_GUID_PREFIX) or guid in guids:
+                    continue
+                dangling.append((d.file_id, guid))
+
+    inherited: Counter[str] = Counter()
+    if dangling and on_target is not None:  # the target's copy is read only for a file with a dangling reference
+        old = on_target()
+        moved = []
+        for ref in dangling:  # first the references the same object held on the target
+            if old[ref] > 0:
+                old[ref] -= 1
+                inherited[ref[1]] += 1
+            else:
+                moved.append(ref)
+        by_guid = Counter(guid for _, guid in old.elements())
+        dangling = []
+        for ref in moved:  # then an old reference that moved to another object, by GUID and count
+            if by_guid[ref[1]] > 0:
+                by_guid[ref[1]] -= 1
+                inherited[ref[1]] += 1
+            else:
+                dangling.append(ref)
+    for file_id, guid in dangling:
+        report.add(rel, "guid-ref", f"&{file_id} refers to GUID {guid}, which no asset has")
 
     transforms = {d.file_id: d for d in docs if d.class_id in TRANSFORM_CLASSES and not d.stripped}
     stripped = {d.file_id for d in docs if d.stripped}
@@ -312,6 +342,7 @@ def check_yaml_file(root: Path, path: Path, report: CheckReport, guids: set[str]
             father = _FATHER.search(transforms[child].body)
             if not father or father.group(1) != d.file_id:
                 report.add(rel, "hierarchy", f"&{d.file_id} lists child &{child}, whose m_Father is not &{d.file_id}")
+    return inherited
 
 
 def check_conflict_markers(root: Path, paths: Iterable[str], report: CheckReport) -> None:
@@ -323,14 +354,41 @@ def check_conflict_markers(root: Path, paths: Iterable[str], report: CheckReport
                 report.add(rel, "conflict-marker", "merge conflict markers left in the file")
 
 
+PACKAGE_NOTE_GUIDS = 10  # the most GUIDs the package note names
+
+
+def _dangling_refs(text: str | None, guids: set[str]) -> Counter[tuple[str, str]]:
+    """The references of a YAML text to GUIDs that are not built in and not in `guids`, counted by (fileID of the
+    object that holds it, GUID); none for a missing text or one that is not Unity YAML."""
+    try:
+        docs = parse_unity_yaml(text) if text else []
+    except ValueError:
+        docs = []
+    found = ((d.file_id, m.group(2).lower()) for d in docs for m in _GUID_REF.finditer(d.body))
+    return Counter(ref for ref in found if not ref[1].startswith(BUILTIN_GUID_PREFIX) and ref[1] not in guids)
+
+
 def static_checks(root: Path | str, changed: Iterable[str] | None = None, package_cache: Path | None = None,
-                  tree: MetaTree | None = None, target: MetaTree | None = None) -> CheckReport:
+                  tree: MetaTree | None = None, target: MetaTree | None = None,
+                  target_text: "Callable[[str], str | None] | None" = None) -> CheckReport:
     """Run the static checks. `changed` limits the per-file checks; None checks every YAML file.
 
     `tree`: the commit being checked as git holds it. Given, the `.meta` check and the GUIDs a YAML
     reference may name come from it (and the package cache), not from the disk, so an untracked or missing file in
     the slot changes no answer; `target` then limits the `.meta` findings to those the target's tree does not give.
-    Not given, both read the disk under `root` (`disk_meta_tree`)."""
+    Not given, both read the disk under `root` (`disk_meta_tree`).
+
+    `target_text(path)`: the file's text on the target, or None. Given with `target`, a reference to a GUID that
+    already dangled in the file at the same path on the target is not the merge's own, up to the number of references
+    to that GUID the file held there: those are left out of the findings and counted in a note. The check reads the
+    whole of each changed file, not only its changed lines, so without this every old dangling reference in a file
+    would stop each land that touches it. A reference the same object held is matched first, so a finding names the
+    object that holds a new reference; then by GUID and count, so a branch that moves an old dangling reference to
+    another object is not reported. A file new or renamed on the branch, or one the target holds only as a Git LFS
+    pointer or as text that is not Unity YAML, has no old references, so all of its references are reported. The
+    target's package GUIDs are not known: a GUID of a package asset the merge removed counts as dangling on the target
+    too, so when the merge changes the package manifest or lock file and a reference was left out, a note names the
+    GUIDs left out."""
     root = Path(root)
     report = CheckReport()
     cache = package_cache if package_cache is not None else root / "Library" / "PackageCache"
@@ -351,8 +409,25 @@ def static_checks(root: Path | str, changed: Iterable[str] | None = None, packag
         files = [root / rel for rel in changed_rel if (root / rel).suffix in UNITY_YAML and (root / rel).is_file()]
 
     check_conflict_markers(root, changed_rel, report)
+    filtered = guids is not None and target is not None and target_text is not None
+    target_guids = set(target.guids) if filtered else set()  # an asset the target had and the branch deleted: new
+    inherited: Counter[str] = Counter()
     for path in files:
-        check_yaml_file(root, path, report, guids)
+        rel = _rel(root, path)
+        on_target = (lambda rel=rel: _dangling_refs(target_text(rel), target_guids)) if filtered else None
+        inherited += check_yaml_file(root, path, report, guids, on_target)
+    count = sum(inherited.values())
+    if count:
+        were = "reference was" if count == 1 else "references were"
+        report.notes.append(f"{count} dangling GUID {were} already in the same files on the target, "
+                            "so not counted as findings")
+        if any(rel in ("Packages/manifest.json", "Packages/packages-lock.json") for rel in changed_rel):
+            shown = sorted(inherited)[:PACKAGE_NOTE_GUIDS]
+            more = f", and {len(inherited) - len(shown)} more" if len(inherited) > len(shown) else ""
+            report.notes.append("the merge changes the packages, and a reference to a GUID of a package asset it "
+                                "removed counts as already dangling on the target; check the references in the changed "
+                                "files "
+                                f"to these GUIDs: {', '.join(shown)}{more}")
     report.notes.append(f"static checks covered {len(files)} YAML files")
     return report
 
