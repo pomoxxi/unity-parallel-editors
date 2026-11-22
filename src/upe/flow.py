@@ -539,6 +539,7 @@ class Config:
     unity_editor: Path | None = None
     yaml_merge: Path | None = None  # else the one beside the Editor
     job_workers: int | None = 4
+    max_slots: int | None = None  # cap total slots on disk; None leaves it unbounded
     council_effort: str = "medium"  # the effort council members are started at; `land` says so (decision 12)
     # The CPU priority of everything the tool runs: "below_normal" gives way to the user's own programs.
     editor_priority: str = "below_normal"
@@ -586,6 +587,7 @@ class Config:
             unity_cli=p("unity_cli"), unity_editor=p("unity_editor"),
             yaml_merge=p("yaml_merge"),
             job_workers=data.get("job_workers", 4),
+            max_slots=_optional_pos_int(path, data, "max_slots"),
             council_effort=data.get("council_effort", "medium"),
             editor_priority=editor_priority,
             refresh_golden_after_land=bool(data.get("refresh_golden_after_land", True)),
@@ -683,7 +685,10 @@ class Flow:
         self._identity = identity or identities.agent_process
         self.state_dir = config.root / ".upe"
         self.registry = ClaimRegistry(self.state_dir / "claims.json")
-        self.workspaces = workspaces or Workspaces(config.repo, config.root, config.golden, runner=runner, local_copies=config.local_copies)
+        self.workspaces = workspaces or Workspaces(
+            config.repo, config.root, config.golden, runner=runner,
+            local_copies=config.local_copies, max_slots=config.max_slots,
+        )
         self.merger = merger or Merger(
             config.repo,
             yaml_merger=unity_yaml_merge(self._yaml_merge_exe, yaml_merge_flags(config.repo)),
@@ -3107,6 +3112,10 @@ class Flow:
                      + self._discard_text(task_id, path, dirt, dirt.outside, "Once you know none is"))
         return text
 
+    def prune(self, keep: int = 3) -> dict[str, list[str]]:
+        """Remove excess parked slots (and their Libraries), keeping at most `keep` parked."""
+        return self.workspaces.prune(keep=keep)
+
 
 # `ARGV_CAP` and `_capped` are `cmdline.ARGV_CAP` and `cmdline.capped`.
 # A GUID reference in a text file of the target: `guid: <hex>` as Unity writes it in YAML (scenes, prefabs, assets,
@@ -3188,6 +3197,15 @@ def _flag(path: Path, data: dict, key: str, default: bool) -> bool:
     value = data.get(key, default)
     if not isinstance(value, bool):
         raise FlowError(f"{path}: {key} must be true or false, without quotes")
+    return value
+
+
+def _optional_pos_int(path: Path, data: dict, key: str) -> int | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise FlowError(f"{path}: {key} must be an integer of 1 or more")
     return value
 
 
