@@ -116,6 +116,7 @@ class Workspaces:
         runner: Runner = subprocess.run,
         robocopy_threads: int = 16,
         local_copies: Sequence[str] = (),
+        max_slots: int | None = None,
     ) -> None:
         self.repo = Path(repo)
         self.root = Path(root)  # worktrees go here, one folder per task
@@ -125,6 +126,7 @@ class Workspaces:
         # Git-ignored files and folders the project needs to compile (an asset
         # store package kept out of git). Copied from the main checkout.
         self.local_copies = tuple(local_copies)
+        self.max_slots = max_slots
 
     # Git -----------------------------------------------------------------
 
@@ -200,6 +202,11 @@ class Workspaces:
                 raise WorkspaceError(f"{owner} already has slot {self.path_of(owner)}")
             parked = [name for name in sorted(slots, key=_slot_number)
                       if slots[name] is None and self._reusable(self.slots_dir / name)]
+            if not parked and self.max_slots is not None and len(slots) >= self.max_slots:
+                raise WorkspaceError(
+                    f"slot limit reached ({len(slots)} of {self.max_slots} slots exist, none reusable); "
+                    "finish a task or run `upe prune`"
+                )
             name = parked[0] if parked else _next_slot(slots)
             slots[name] = owner
             self._write_map(slots)
@@ -478,6 +485,55 @@ class Workspaces:
         The branch is kept; it is deleted only after it lands.
         """
         self.release(task_id)
+
+    def prune(self, keep: int = 3) -> dict[str, list[str]]:
+        """Remove excess parked slots (folder and Library included), keeping at most `keep` parked."""
+        if isinstance(keep, bool) or not isinstance(keep, int) or keep < 0:
+            raise WorkspaceError("keep must be an integer of 0 or more")
+        with self._locked():
+            slots = self._read_map()
+            resuming = [name for name in sorted(slots, key=_slot_number)
+                        if slots[name] == f"prune:{name}" and self.removal_begun(name, f"prune:{name}")]
+            busy = [name for name in sorted(slots, key=_slot_number)
+                    if slots[name] is not None and name not in resuming]
+            parked = [name for name in sorted(slots, key=_slot_number) if slots[name] is None]
+            kept = parked[:keep]
+            new_candidates = parked[keep:]
+            for name in new_candidates:
+                slots[name] = f"prune:{name}"
+            if new_candidates:
+                self._write_map(slots)
+        candidates = resuming + new_candidates
+        removed: list[str] = []
+        skipped: list[str] = []
+        for idx, name in enumerate(candidates):
+            owner = f"prune:{name}"
+            path = self.slots_dir / name
+            is_resuming = name in resuming
+            if not is_resuming and path.is_dir() and (
+                lock_state(path) == "held" or ((path / ".git").exists() and self._has_changes(path))
+            ):
+                with self._locked():
+                    slots = self._read_map()
+                    if slots.get(name) == owner:
+                        slots[name] = None
+                        self._write_map(slots)
+                skipped.append(name)
+                continue
+            try:
+                self.remove_slot(owner)
+            except BaseException:
+                with self._locked():
+                    slots = self._read_map()
+                    if not is_resuming and slots.get(name) == owner and (path / ".git").exists():
+                        slots[name] = None
+                    for rest in candidates[idx + 1:]:
+                        if rest not in resuming and slots.get(rest) == f"prune:{rest}":
+                            slots[rest] = None
+                    self._write_map(slots)
+                raise
+            removed.append(name)
+        return {"removed": removed, "kept": kept, "busy": busy, "skipped": skipped}
 
     def copy_local(self, worktree: Path) -> None:
         """Copy `local_copies` from the main checkout into a new worktree.

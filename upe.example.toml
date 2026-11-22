@@ -41,6 +41,11 @@ unity_cli = "<path to unity.exe of the unity CLI>"
 # Threads per batch Editor, so several can run at once.
 job_workers = 4
 
+# Optional cap on total slots on disk (busy plus parked). When reached and no
+# parked slot is reusable, `upe start` refuses until a task finishes or you run
+# `upe prune`. Leave unset for no cap.
+# max_slots = 4
+
 # CPU priority of everything the tool runs (git, robocopy, the CLI, Editors).
 # "below_normal" gives way to the user's own programs when the CPU is busy; the
 # judge's high/normal/low are then NORMAL/BELOW_NORMAL/IDLE. "normal" restores

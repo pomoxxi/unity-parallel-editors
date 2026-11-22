@@ -97,6 +97,12 @@ That is the installed tool. Never run `python -m upe` from inside a worktree: a 
 
    `finish` also clears a `start` that died before it wrote its record (its claim, its slot and its branch), when `next` says to run it; it refuses, and frees nothing, while that start may still run or its slot or branch holds work.
 
+   Parked slots keep their Libraries for fast reuse. To reclaim disk space, or if `max_slots` in `upe.toml` caps total slots, remove excess parked slots (keeping 3 by default):
+
+   ```
+   {{UPE}} --json prune --keep 3
+   ```
+
 ## Sitting on a council
 
 You may sit only if you did not do this work, plan this task or resolve a conflict in it, and only in a process of your own: a session the user or an orchestrator started is fine, a subagent inside the landing agent's process is not. The tool refuses a verdict from the agent process that ran `land`, or from the same process as the other member.

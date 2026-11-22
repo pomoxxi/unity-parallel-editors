@@ -30,7 +30,7 @@ from .workspace import TASK_ID, WorkspaceError
 
 ERRORS = (FlowError, ClaimError, WorkspaceError, MergeError, AgentPackageError, EditorError, UnityCliError, JudgeError,
           CouncilError, SetupError)
-HEAVY_COMMANDS = ("start", "land", "verdict", "decide", "withdraw", "finish", "golden", "editor")  # copy Libraries, run Editors
+HEAVY_COMMANDS = ("start", "land", "verdict", "decide", "withdraw", "finish", "prune", "golden", "editor")  # copy Libraries, run Editors
 TOOL_HOME = Path(__file__).resolve().parents[2]  # this repo, where upe.toml lives
 CLAIMS_WAIT = 5.0  # seconds `status` waits for the claims' lock; a change holds it for well under one
 WAIT_POLL_S = 5.0  # `job --wait` reads the job's record this often
@@ -107,6 +107,9 @@ def parser() -> argparse.ArgumentParser:
 
     golden = sub.add_parser("golden", help="bring the golden Library up to the target")
     golden.add_argument("--create", action="store_true", help="make the golden worktree first")
+
+    prune = sub.add_parser("prune", help="remove excess parked slots and their Libraries")
+    prune.add_argument("--keep", type=int, default=3, help="number of parked slots to keep for reuse (default: 3)")
 
     setup = sub.add_parser("setup", help="the user names this machine's paths and the tool writes upe.toml (at a terminal)")
     setup.add_argument("--check", action="store_true", help="read every path in upe.toml again; changes nothing")
@@ -196,6 +199,9 @@ def run(flow: Flow, args: argparse.Namespace) -> int:
     elif args.command == "golden":
         text = flow.create_golden() if args.create else flow.refresh_golden()
         emit(args, {"golden": text}, text)
+    elif args.command == "prune":
+        result = flow.prune(keep=args.keep)
+        emit(args, result, _render_prune(result))
     elif args.command == "verdict":
         text = sys.stdin.read() if args.file == "-" else Path(args.file).read_text(encoding="utf-8-sig")  # PowerShell writes a BOM
         return outcome(args, flow.verdict(args.task_id, args.member, text))
@@ -528,6 +534,15 @@ def lower_own_priority(base: str) -> None:
 
 def _render_judge(decision) -> str:
     return "\n".join(f"{name:24} {priority:7} {decision.reasons.get(name, '')}" for name, priority in decision.priorities.items())
+
+
+def _render_prune(result: dict[str, list[str]]) -> str:
+    parts = [f"removed {len(result['removed'])}" + (f" ({', '.join(result['removed'])})" if result["removed"] else ""),
+             f"kept {len(result['kept'])}" + (f" ({', '.join(result['kept'])})" if result["kept"] else ""),
+             f"busy {len(result['busy'])}"]
+    if result["skipped"]:
+        parts.append(f"skipped {len(result['skipped'])} ({', '.join(result['skipped'])})")
+    return "; ".join(parts)
 
 
 def watch(flow: Flow) -> None:

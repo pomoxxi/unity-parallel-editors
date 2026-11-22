@@ -826,6 +826,30 @@ class MainTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("inside repo", err)
 
+    def test_config_validates_max_slots(self):
+        base = self.config.read_text(encoding="utf-8")
+        self.assertIsNone(cli.Config.load(self.config).max_slots)
+        self.config.write_text(base + "max_slots = 4\n", encoding="utf-8")
+        self.assertEqual(cli.Config.load(self.config).max_slots, 4)
+        for bad in ("max_slots = 0\n", "max_slots = -2\n", "max_slots = true\n", 'max_slots = "4"\n'):
+            with self.subTest(bad=bad):
+                self.config.write_text(base + bad, encoding="utf-8")
+                with self.assertRaises(cli.FlowError):
+                    cli.Config.load(self.config)
+
+    def test_prune_command_json_and_text(self):
+        answer = {"removed": ["s4", "s5"], "kept": ["s1", "s2", "s3"], "busy": ["s6"], "skipped": []}
+        with mock.patch.object(cli.Flow, "prune", return_value=answer) as pruned, \
+                mock.patch.object(cli, "lower_own_priority"):
+            code, out, _ = self.main("--json", "prune", "--keep", "3")
+            self.assertEqual((code, json.loads(out)), (0, answer))
+            pruned.assert_called_with(keep=3)
+            code, text, _ = self.main("prune")
+            self.assertEqual(code, 0)
+            self.assertIn("removed 2 (s4, s5)", text)
+            self.assertIn("kept 3 (s1, s2, s3)", text)
+            self.assertIn("busy 1", text)
+
 
 if __name__ == "__main__":
     unittest.main()

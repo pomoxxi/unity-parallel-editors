@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
+from unittest import mock
 
 from upe.workspace import LOCKFILE, WorkspaceError, Workspaces, clear_stale_lock, lock_state
 
@@ -485,6 +486,57 @@ class DeadStartSlotTests(Base):
             self.ws.remove_slot("feat-4")
         self.assertIn("did not begin removing it", str(ctx.exception))
         self.assertTrue((w.path / "Assets" / "mine.txt").exists())
+
+    def test_max_slots_caps_new_slots_but_allows_reusing_a_parked_slot(self):
+        ws = Workspaces(self.repo, self.tmp / "wt", self.golden, robocopy_threads=2, max_slots=2)
+        w1 = ws.create("cap-1")
+        w2 = ws.create("cap-2")
+        with self.assertRaises(WorkspaceError) as ctx:
+            ws.create("cap-3")
+        self.assertIn("slot limit reached", str(ctx.exception))
+        self.assertIn("upe prune", str(ctx.exception))
+        ws.remove("cap-1")
+        w3 = ws.create("cap-3")
+        self.assertEqual(w3.path, w1.path)
+        self.assertEqual(ws.slots(), {"s1": "cap-3", "s2": "cap-2"})
+        self.assertTrue(w2.path.is_dir())
+
+    def test_prune_removes_excess_parked_slots_and_keeps_busy_and_dirty_ones(self):
+        w1 = self.ws.create("p1")
+        w2 = self.ws.create("p2")
+        w3 = self.ws.create("p3")
+        w4 = self.ws.create("p4")
+        self.ws.remove("p1")
+        self.ws.remove("p2")
+        self.ws.remove("p3")
+        # s4 stays busy; s3 gets hand-edited after parking so prune must skip it
+        (w3.path / "Assets" / "hand.txt").write_text("keep")
+        result = self.ws.prune(keep=1)
+        self.assertEqual(result, {"removed": ["s2"], "kept": ["s1"], "busy": ["s4"], "skipped": ["s3"]})
+        self.assertTrue(w1.path.exists())
+        self.assertFalse(w2.path.exists())
+        self.assertTrue((w3.path / "Assets" / "hand.txt").exists())
+        self.assertTrue(w4.path.exists())
+        self.assertEqual(self.ws.slots(), {"s1": None, "s3": None, "s4": "p4"})
+        # Cleaning s3 and pruning with keep=0 removes the remaining parked slots
+        (w3.path / "Assets" / "hand.txt").unlink()
+        result2 = self.ws.prune(keep=0)
+        self.assertEqual(result2, {"removed": ["s1", "s3"], "kept": [], "busy": ["s4"], "skipped": []})
+        self.assertEqual(self.ws.slots(), {"s4": "p4"})
+
+    def test_prune_skips_parked_slot_with_held_lock_and_refuses_negative_keep(self):
+        with self.assertRaises(WorkspaceError):
+            self.ws.prune(keep=-1)
+        w1 = self.ws.create("l1")
+        w2 = self.ws.create("l2")
+        self.ws.remove("l1")
+        self.ws.remove("l2")
+        with mock.patch("upe.workspace.lock_state", side_effect=lambda p: "held" if p == w2.path else "free"):
+            result = self.ws.prune(keep=0)
+        self.assertEqual(result, {"removed": ["s1"], "kept": [], "busy": [], "skipped": ["s2"]})
+        self.assertFalse(w1.path.exists())
+        self.assertTrue(w2.path.exists())
+        self.assertEqual(self.ws.slots(), {"s2": None})
 
 
 @unittest.skipUnless(sys.platform == "win32", "robocopy is Windows'")
